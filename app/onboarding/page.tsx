@@ -154,7 +154,11 @@ export default function OnboardingPage() {
     }
     setError(null);
     if (typeof window !== "undefined") {
-      const data = { userName: name, completedAt: new Date().toISOString() };
+      const data = {
+        userName: name,
+        hasVisited: true,
+        completedAt: new Date().toISOString(),
+      };
       getAppStorage().setItem(STORAGE_KEY, JSON.stringify(data));
     }
     setStep(6);

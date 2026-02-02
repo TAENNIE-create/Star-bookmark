@@ -11,6 +11,8 @@ import { TabBar, type TabKey } from "../components/arisum/tab-bar";
 import { MIDNIGHT_BLUE } from "../lib/theme";
 import { getAppStorage } from "../lib/app-storage";
 
+const ONBOARDING_KEY = "arisum-onboarding";
+
 type LatestAnalysis = {
   keywords: [string, string, string];
   counselorLetter: string;
@@ -20,9 +22,27 @@ export default function HomePage() {
   const router = useRouter();
   const [latestAnalysis, setLatestAnalysis] = useState<LatestAnalysis | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("home");
+  const [onboardingChecked, setOnboardingChecked] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    try {
+      const raw = getAppStorage().getItem(ONBOARDING_KEY);
+      const data = raw ? (JSON.parse(raw) as { userName?: string; hasVisited?: boolean }) : null;
+      const userName = data?.userName?.trim();
+      if (!userName) {
+        router.replace("/onboarding");
+        return;
+      }
+      setOnboardingChecked(true);
+    } catch {
+      router.replace("/onboarding");
+      return;
+    }
+  }, [router]);
+
+  useEffect(() => {
+    if (!onboardingChecked) return;
     try {
       const raw = getAppStorage().getItem("arisum-latest-analysis");
       if (!raw) return;
@@ -37,7 +57,7 @@ export default function HomePage() {
     } catch {
       // ignore
     }
-  }, []);
+  }, [onboardingChecked]);
 
   const handleTabChange = (key: TabKey) => {
     if (key === "journal") {
@@ -50,6 +70,10 @@ export default function HomePage() {
       setActiveTab(key);
     }
   };
+
+  if (!onboardingChecked) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen flex justify-center bg-transparent">

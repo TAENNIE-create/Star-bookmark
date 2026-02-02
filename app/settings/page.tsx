@@ -10,7 +10,7 @@ import { createClient } from "../../lib/supabase/client";
 
 const ONBOARDING_KEY = "arisum-onboarding";
 
-type Stored = { userName: string; aiTone?: string; completedAt?: string };
+type Stored = { userName: string; aiTone?: string; completedAt?: string; hasVisited?: boolean };
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -183,6 +183,21 @@ export default function SettingsPage() {
               }}
             >
               {saved ? "저장됨" : "저장하기"}
+            </button>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="pt-2"
+          >
+            <button
+              type="button"
+              onClick={() => router.push("/onboarding")}
+              className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              온보딩 다시 보기
             </button>
           </motion.div>
         </main>
