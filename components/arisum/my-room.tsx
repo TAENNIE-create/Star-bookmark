@@ -82,7 +82,7 @@ function getJournalCharCountForDate(dateKey: string): number {
     const parsed: Record<string, unknown[]> = raw ? JSON.parse(raw) : {};
     const entries = parsed[dateKey];
     if (!Array.isArray(entries)) return 0;
-    return entries.reduce((sum, e) => sum + (typeof e?.content === "string" ? e.content.length : 0), 0);
+    return entries.reduce((sum: number, e: any): number => sum + (typeof e?.content === "string" ? e.content.length : 0), 0);
   } catch {
     return 0;
   }
