@@ -1,0 +1,134 @@
+@import "tailwindcss";
+
+/* 폰트 10% 축소 (기존 110% 기준) */
+html {
+  font-size: 99%;
+}
+
+:root {
+  --background: #F4F7FB;
+  --foreground: #0F172A;
+  --forest-green: #0F172A;
+  --mud-green: #64748B;
+  --light-green: #E2E8F0;
+  --card-green: #F1F5F9;
+}
+
+/* next/font가 html에 --font-a2z-r, --font-a2z-m 주입. Tailwind fontFamily 연동 */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-forest-green: var(--forest-green);
+  --color-mud-green: var(--mud-green);
+  --color-light-green: var(--light-green);
+  --color-card-green: var(--card-green);
+  --font-sans: var(--font-a2z-r), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-a2z-r), ui-mono, monospace;
+  --font-display: var(--font-a2z-m), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* 기본 본문: 에이투지체 Regular */
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-a2z-r), ui-sans-serif, system-ui, sans-serif !important;
+  font-weight: 400;
+  letter-spacing: 0.025em;
+  line-height: 1.625;
+}
+
+/* 제목·강조: 에이투지체 Medium */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-a2z-m), sans-serif;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  line-height: 1.5;
+}
+
+strong, b, .font-medium, .font-semibold, .font-bold {
+  font-family: var(--font-a2z-m), sans-serif;
+}
+
+/* 일기·버튼·퀘스트 등 본문 영역도 동일 폰트 */
+.font-a2z-r {
+  font-family: var(--font-a2z-r), sans-serif;
+  letter-spacing: 0.025em;
+  line-height: 1.625;
+}
+
+.arisum-diary-content {
+  font-family: var(--font-a2z-r), sans-serif;
+  letter-spacing: 0.025em;
+  line-height: 1.75;
+}
+
+.font-a2z-m {
+  font-family: var(--font-a2z-m), sans-serif;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+}
+
+/* 퀘스트 내용/프로필 문구/달력 숫자용: 에이투지체 Regular */
+.font-a2z-regular {
+  font-family: var(--font-a2z-regular), sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.025em;
+}
+
+/* 퀘스트 리스트 텍스트: 단어 단위 줄바꿈, 가독성 */
+/* 월간 기록집(월간 리포트) 미드나잇 블루 & 샴페인 골드 고대비 테마 */
+.arisum-vintage-page {
+  --midnight-blue: #0F172A;
+  --silver-white: #E2E8F0;
+  --champagne-gold: #FDE68A;
+  --antique-gold: #b8860b;
+  --antique-gold-dark: #8B6914;
+}
+
+.arisum-vintage-page {
+  background-color: var(--midnight-blue);
+  color: var(--silver-white);
+  position: relative;
+}
+
+/* 월간 기록집 본문: 단어 단위 줄바꿈(띄어쓰기 기준), 가독성 */
+.arisum-vintage-page p,
+.arisum-vintage-page h1,
+.arisum-vintage-page h2 {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+/* 본문 단락: 양쪽 정렬로 앞·뒤 여백 균일, 자간 조절 */
+.arisum-vintage-page p {
+  text-align: justify;
+  text-align-last: left;
+  letter-spacing: 0.02em;
+}
+
+/* 섹션 헤더: 샴페인 골드 제목 + 빛나는 골드 수직선 */
+.arisum-vintage-page .arisum-section-title {
+  padding-left: 14px;
+  border-left: 5px solid var(--champagne-gold);
+  box-shadow: 2px 0 12px rgba(253, 230, 138, 0.4);
+  font-family: var(--font-a2z-r), sans-serif;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--champagne-gold) !important;
+}
+
+.arisum-quest-label {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  font-size: 0.95rem;
+}
+
+/* 별의 갈피 전역 배경 */
+.arisum-cosmic-body {
+  background: radial-gradient(
+    ellipse 70% 60% at 50% 40%,
+    rgba(148, 163, 184, 0.06) 0%,
+    transparent 55%
+  ),
+  var(--background);
+}
