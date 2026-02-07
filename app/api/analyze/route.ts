@@ -4,28 +4,18 @@ import type { MoodScores } from "../../../lib/arisum-types";
 import { MOOD_SCORE_KEYS } from "../../../lib/arisum-types";
 import { TRAITS, TRAIT_CATEGORY_ORDER } from "../../../constants/traits";
 import type { TraitCategory } from "../../../constants/traits";
-import type { IdentityArchive, ConfirmedTrait } from "../../../lib/identity-archive";
+import type { IdentityArchive, ConfirmedTrait, TraitEvent } from "../../../lib/identity-archive";
+import { TRAIT_EVENTS_MAX_DAYS, parseArchiveRaw } from "../../../lib/identity-archive";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-/** user_identity_summary 파싱 (문자열 or JSON) */
+/** user_identity_summary 파싱 (문자열이면 parseArchiveRaw, 객체면 JSON 직렬화 후 파싱). confirmedTraits 항상 배열. */
 function parseArchive(raw: unknown): IdentityArchive {
-  if (!raw) return { summary: "", traitCounts: {}, confirmedTraits: {} };
-  if (typeof raw === "string") {
-    try {
-      const p = JSON.parse(raw);
-      if (p && typeof p.summary === "string") return p;
-    } catch {
-      return { summary: raw, traitCounts: {}, confirmedTraits: {} };
-    }
-    return { summary: raw, traitCounts: {}, confirmedTraits: {} };
-  }
-  if (typeof raw === "object" && raw !== null && "summary" in raw) {
-    return raw as IdentityArchive;
-  }
-  return { summary: "", traitCounts: {}, confirmedTraits: {} };
+  if (raw == null) return parseArchiveRaw(null);
+  const str = typeof raw === "string" ? raw : JSON.stringify(raw);
+  return parseArchiveRaw(str || null);
 }
 
 type AnalyzeRequest = {
@@ -235,13 +225,22 @@ quests는 반드시 5개. 각 문장은 '~하기'로 끝내고, 내일 15분 내
         ? raw.updatedArchive.trim()
         : (typeof raw.updatedSummary === "string" && raw.updatedSummary.trim() ? raw.updatedSummary.trim() : (user_identity_summary || "") + "\n[오늘 일기 요약]\n" + firstText.slice(0, 200));
 
-    let identityArchive: IdentityArchive = {
+    const existingTraitEvents: TraitEvent[] = Array.isArray((archive as { traitEvents?: TraitEvent[] }).traitEvents)
+      ? [...(archive as { traitEvents: TraitEvent[] }).traitEvents]
+      : [];
+    const confirmedTraitsArray: ConfirmedTrait[] = Array.isArray(archive.confirmedTraits)
+      ? [...archive.confirmedTraits]
+      : [];
+    let identityArchive: IdentityArchive & { traitEvents?: TraitEvent[] } = {
       summary: updatedArchive,
       traitCounts: { ...archive.traitCounts },
-      confirmedTraits: { ...archive.confirmedTraits },
+      confirmedTraits: confirmedTraitsArray,
+      traitEvents: existingTraitEvents,
     };
 
     let newlyConfirmedTrait: { traitId: string; label: string; opening: string; body: string; closing: string } | undefined;
+    /** 이번 분석에서 카운트를 +1 한 trait id 목록 (삭제 시 회수용) */
+    const traitIdsIncrementedForThisDate: string[] = [];
 
     /** [트랙 B] 7회 반복 추적: 오늘 일기에서 trait 후보 추출 → 카운트 +1 → 정확히 7회 시 확정(축하 팝업용) */
     if (process.env.OPENAI_API_KEY && firstText.length > 50) {
@@ -277,8 +276,10 @@ quests는 반드시 5개. 각 문장은 '~하기'로 끝내고, 내일 15분 내
             for (const id of ids) {
               if (validIds.has(id)) {
                 identityArchive.traitCounts[id] = (identityArchive.traitCounts[id] ?? 0) + 1;
+                traitIdsIncrementedForThisDate.push(id);
                 const count = identityArchive.traitCounts[id]!;
-                if (count >= 7 && !identityArchive.confirmedTraits[cat as TraitCategory]) {
+                const alreadyConfirmed = identityArchive.confirmedTraits.some((t) => t.traitId === id);
+                if (count >= 7 && !alreadyConfirmed) {
                   const trait = TRAITS.find((t) => t.id === id);
                   if (trait) {
                     const reasonComp = await client.chat.completions.create({
@@ -287,7 +288,9 @@ quests는 반드시 5개. 각 문장은 '~하기'로 끝내고, 내일 15분 내
                         {
                           role: "system",
                           content: `이 성격 지표를 확정한 근거(7개 이상 일기에서 반복된 공통 패턴)를 요약하고, 별지기(다정한 상담사) 말투로 팝업용 문장 작성. JSON만.
-{"reasoning":"쉽게 이해할 수 있는 근거 1~2문장","opening":"[닉네임]님을 지켜보니, ~한 순간들이 자주 보여요.","body":"이 성격이 삶에서 어떤 의미인지 2~3문장","closing":"이 점을 소중히 여기면 좋겠어요."}`,
+규칙: (1) opening에는 반드시 [닉네임]을 그대로 두어라. (2) closing은 가치 중립적으로 써라. 성격이 '불안, 걱정, 무기력' 등 부정적이거나 힘든 상태를 나타낼 때는 '소중히 여기다/간직하다'나 '빛'을 사용하지 말고, '인지하다, 이해하다, 기록하다'처럼 객관적으로 관찰·기록하는 표현을 써라. 사용자가 평가받거나 교정받는 느낌이 들지 않게, 상담가로서 객관적 관찰자 태도를 유지해라.
+예시 closing(긍정적): "이 기록은 당신을 더 깊이 이해하는 단서가 될 거예요."
+{"reasoning":"쉽게 이해할 수 있는 근거 1~2문장","opening":"[닉네임]님을 지켜보니, ~한 순간들이 자주 보여요.","body":"이 성격이 삶에서 어떤 의미인지 2~3문장","closing":"가치 중립적 마무리 1문장"}`,
                         },
                         {
                           role: "user",
@@ -304,20 +307,22 @@ quests는 반드시 5개. 각 문장은 '~하기'로 끝내고, 내일 15분 내
                         body?: string;
                         closing?: string;
                       };
-                      identityArchive.confirmedTraits[cat as TraitCategory] = {
+                      const newTrait: ConfirmedTrait = {
+                        category: cat as TraitCategory,
                         traitId: id,
                         label: trait.label,
                         reasoning: String(rp.reasoning ?? "").slice(0, 200),
                         opening: String(rp.opening ?? "").slice(0, 120),
                         body: String(rp.body ?? "").slice(0, 200),
-                        closing: String(rp.closing ?? "이 점을 소중히 여기면 좋겠어요.").slice(0, 50),
+                        closing: String(rp.closing ?? "이 기록은 당신을 더 깊이 이해하는 단서가 될 거예요.").slice(0, 80),
                       };
+                      identityArchive.confirmedTraits.push(newTrait);
                       newlyConfirmedTrait = {
                         traitId: id,
                         label: trait.label,
                         opening: String(rp.opening ?? "").slice(0, 120),
                         body: String(rp.body ?? "").slice(0, 200),
-                        closing: String(rp.closing ?? "이 점을 소중히 여기면 좋겠어요.").slice(0, 50),
+                        closing: String(rp.closing ?? "이 기록은 당신을 더 깊이 이해하는 단서가 될 거예요.").slice(0, 80),
                       };
                     }
                   }
@@ -329,6 +334,18 @@ quests는 반드시 5개. 각 문장은 '~하기'로 끝내고, 내일 15분 내
       } catch (e) {
         console.warn("[TRAIT_EXTRACT]", e);
       }
+    }
+
+    /** traitEvents: 이번 분석 날짜에 발생한 traitId 기록 추가 후 90일만 유지 */
+    const dateKeyForEvents = body.date ?? new Date().toISOString().slice(0, 10);
+    for (const traitId of traitIdsIncrementedForThisDate) {
+      identityArchive.traitEvents!.push({ date: dateKeyForEvents, traitId });
+    }
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - TRAIT_EVENTS_MAX_DAYS);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    if (identityArchive.traitEvents!.length > 0) {
+      identityArchive.traitEvents = identityArchive.traitEvents!.filter((e) => e.date >= cutoffStr);
     }
 
     const keywordsRaw = Array.isArray(raw.keywords) ? raw.keywords : [];
@@ -490,6 +507,8 @@ JSON만 출력. 형식: {"constellations":[{"id":"c1","name":"...","meaning":"..
       currentConstellation: singleForCompat,
       starConnections: starConnections ?? [],
       newlyConfirmedTrait: newlyConfirmedTrait ?? undefined,
+      traitIdsIncrementedForThisDate:
+        traitIdsIncrementedForThisDate.length > 0 ? traitIdsIncrementedForThisDate : undefined,
     });
   } catch (error) {
     console.error("[ANALYZE_ERROR]", error);

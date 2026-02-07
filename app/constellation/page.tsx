@@ -1,22 +1,54 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { TabBar, type TabKey } from "../../components/arisum/tab-bar";
 import { getUserName } from "../../lib/home-greeting";
-import { getGlobalAtlasData, getActiveConstellations, type ConnectionStyle, type ActiveConstellation } from "../../lib/atlas-storage";
+import { getGlobalAtlasData, getActiveConstellations, CURRENT_ACTIVE_CONSTELLATIONS_KEY, type ConnectionStyle, type ActiveConstellation } from "../../lib/atlas-storage";
 import type { MoodScores } from "../../lib/arisum-types";
 import { MOOD_SCORE_KEYS } from "../../lib/arisum-types";
 import { getAppStorage } from "../../lib/app-storage";
+import { TRAIT_CATEGORY_ORDER, TRAIT_CATEGORY_LABELS } from "../../constants/traits";
+import type { TraitCategory } from "../../constants/traits";
+
+/** 카테고리별 아이콘: 정서 ✦ / 관계 ✧ / 일 ✷ / 사고방식 ✹ / 자아 ✶ / 가치관 ✸ */
+const TRAIT_CATEGORY_ICONS: Record<TraitCategory, string> = {
+  emotional: "✦",
+  interpersonal: "✧",
+  workStyle: "✷",
+  cognitive: "✹",
+  selfConcept: "✶",
+  values: "✸",
+};
+import { getIdentityArchive, removeExtinctTraits, setTestTraitPositive15 } from "../../lib/identity-archive";
+import { getTraitLevel, getTraitLevelRecent, TRAIT_LEVEL_NAMES, type TraitLevel } from "../../lib/trait-level";
+import { LoadingOverlay } from "../../components/arisum/loading-overlay";
 
 const SCORES_HISTORY_KEY = "arisum-scores-history";
 const JOURNALS_KEY = "arisum-journals";
 const IDENTITY_ARCHIVE_KEY = "user_identity_summary";
+/** 밤하늘 탭 재진입 시 로딩 없이 바로 보여줄 캐시 (세션 유지, 5분) */
+const PERSONALITY_PROFILE_CACHE_KEY = "arisum-personality-profile-cache";
+const PERSONALITY_CACHE_TTL_MS = 5 * 60 * 1000;
 const NIGHT_BG = "#050810";
 const NAVY_CARD = "rgba(15,23,42,0.75)";
 const CHAMPAGNE_GOLD = "#FDE68A";
 const SILVER_WHITE = "#E2E8F0";
+
+/** 지도 표현: 별자리당 메인 별 최대 개수(연결선만), 나머지는 점만 */
+const MAX_MAIN_STARS_PER_CONSTELLATION = 6;
+/** 지도 뷰포트 여백(%) */
+const MAP_PADDING = 8;
+/** 별 간 최소 거리(viewBox 0~100 기준). 이보다 가까우면 repulsion로 퍼짐 */
+const MIN_DIST_VIEW = 5;
+const REPULSION_ITERATIONS = 4;
+/** 비강조 별자리 연결선 투명도 */
+const FADED_LINE_OPACITY = 0.08;
+const NORMAL_LINE_OPACITY = 0.5;
+const HIGHLIGHT_LINE_OPACITY = 0.95;
+const NORMAL_LINE_WIDTH = 0.4;
+const HIGHLIGHT_LINE_WIDTH = 1;
 
 type ConstellationStar = { id: string; date: string; x: number; y: number; size: number; keywords?: string[] };
 type ConstellationGroup = { id: string; name: string; summary: string; starIds: string[]; confirmed?: boolean };
@@ -30,6 +62,17 @@ type TraitCardPlaceholder = {
   body: string;
   closing: string;
   evidence: string;
+  traitId?: string;
+  /** 장기 레벨(1~5). confirmed 카드용 */
+  level?: TraitLevel;
+  /** 장기: 마지막 기록일. 30일 미기록 시 fading */
+  lastObservedDate?: string;
+  /** 장기: 'active' | 'fading' (회색/채도 낮춤) */
+  status?: "active" | "fading";
+  /** 요즘의 나 카드용: 최근 기간 내 출현 횟수 */
+  recentCount?: number;
+  /** 요즘의 나 카드용: 7d vs 30d 변화 */
+  trend?: "up" | "down" | "stable";
 };
 
 /** 기존 별자리 매핑용 (중간 섹션) */
@@ -131,6 +174,22 @@ function getDateFromStarId(starId: string): string | null {
   return m ? m[1] : null;
 }
 
+/** 오늘 포함 최근 7일의 일기 날짜 키 세트 (YYYY-MM-DD). 분석 시점이 아닌 일기 날짜 기준 '지금' 필터용 */
+function getLast7DayDateSet(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  const set = new Set<string>();
+  const today = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    set.add(`${y}-${m}-${day}`);
+  }
+  return set;
+}
+
 function getGraduationShownIds(): Set<string> {
   if (typeof window === "undefined") return new Set();
   try {
@@ -168,6 +227,21 @@ function addArchiveCandidate(c: ConstellationGroup) {
   getAppStorage().setItem(
     ARCHIVE_CANDIDATES_KEY,
     JSON.stringify([...prev, { id: c.id, name: c.name, summary: c.summary, completedAt, starIds: c.starIds }])
+  );
+}
+
+/** 7일이 지나 지도/리스트에서 사라진 별자리를 별 서재(아카이브 후보)로 자동 이전 */
+function addArchiveCandidateFromActive(ac: ActiveConstellation) {
+  if (typeof window === "undefined") return;
+  const starIds = ac.starIds ?? [];
+  if (starIds.length < 2) return;
+  const dates = starIds.map(getDateFromStarId).filter(Boolean) as string[];
+  const completedAt = dates.length > 0 ? dates.sort().reverse()[0]! : new Date().toISOString().slice(0, 10);
+  const prev = getArchiveCandidates();
+  if (prev.some((x) => x.id === ac.id)) return;
+  getAppStorage().setItem(
+    ARCHIVE_CANDIDATES_KEY,
+    JSON.stringify([...prev, { id: ac.id, name: ac.name, summary: ac.meaning ?? "", completedAt, starIds }])
   );
 }
 
@@ -252,9 +326,157 @@ export default function ConstellationPage() {
     categoryLabel: string;
   } | null>(null);
   const [highlightedStarIds, setHighlightedStarIds] = useState<Set<string>>(new Set());
+  const [traitCards, setTraitCards] = useState<TraitCardPlaceholder[]>([]);
+  const [activeCards7d, setActiveCards7d] = useState<TraitCardPlaceholder[]>([]);
+  const [activeCards30d, setActiveCards30d] = useState<TraitCardPlaceholder[]>([]);
+  const [activeRange, setActiveRange] = useState<"7d" | "30d">("7d");
+  /** 요즘의 나 필터: 전체 | 정서 | 관계 | 일 | 사고방식 | 자아 | 가치관 */
+  const [activeCategoryFilter, setActiveCategoryFilter] = useState<TraitCategory | "all">("all");
+  const [isLoadingTraits, setIsLoadingTraits] = useState(false);
+  /** 100일 경과로 목록에서 내려간 성격 안내 팝업 (한 번 표시 후 제거) */
+  const [extinctTraitsToNotify, setExtinctTraitsToNotify] = useState<{ traitId: string; label: string }[]>([]);
+  /** 진정한 나 아코디언: 카테고리별 펼침/접힘 (기본 접힘) */
+  const [longTermExpanded, setLongTermExpanded] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(TRAIT_CATEGORY_ORDER.map((c) => [c, false]))
+  );
 
   useEffect(() => {
     setNickname(getUserName());
+  }, []);
+
+  const applyProfileData = useCallback(
+    (data: {
+      confirmedCards?: TraitCardPlaceholder[];
+      cards?: TraitCardPlaceholder[];
+      activeCards7d?: TraitCardPlaceholder[];
+      activeCards30d?: TraitCardPlaceholder[];
+      extinctTraits?: { traitId: string; label: string }[];
+    }) => {
+      setTraitCards(Array.isArray(data.confirmedCards) ? data.confirmedCards : Array.isArray(data.cards) ? data.cards : []);
+      setActiveCards7d(Array.isArray(data.activeCards7d) ? data.activeCards7d : []);
+      setActiveCards30d(Array.isArray(data.activeCards30d) ? data.activeCards30d : []);
+      const extinct = Array.isArray(data.extinctTraits) ? data.extinctTraits : [];
+      if (extinct.length > 0) {
+        setExtinctTraitsToNotify(extinct);
+        removeExtinctTraits(extinct.map((t) => t.traitId));
+      }
+    },
+    []
+  );
+
+  const fetchPersonalityProfile = useCallback(
+    (background = false) => {
+      const raw = getIdentityArchiveRaw();
+      const userName = nickname || getUserName();
+      const journalContents = getJournalContentsForConstellations();
+      const identitySummary =
+        typeof window !== "undefined"
+          ? (() => {
+              try {
+                const ar = raw ? JSON.parse(raw) : {};
+                return typeof ar.summary === "string" ? ar.summary : "";
+              } catch {
+                return "";
+              }
+            })()
+          : "";
+      if (!background) setIsLoadingTraits(true);
+      fetch("/api/personality-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          identityArchiveRaw: raw || undefined,
+          user_identity_summary: raw || undefined,
+          userName,
+          recentJournalContents: journalContents,
+          identitySummary: identitySummary || undefined,
+        }),
+      })
+        .then((r) => r.json())
+        .then((data: {
+          confirmedCards?: TraitCardPlaceholder[];
+          cards?: TraitCardPlaceholder[];
+          activeCards7d?: TraitCardPlaceholder[];
+          activeCards30d?: TraitCardPlaceholder[];
+          extinctTraits?: { traitId: string; label: string }[];
+        }) => {
+          applyProfileData(data);
+          if (typeof window !== "undefined") {
+            try {
+              getAppStorage().setItem(
+                PERSONALITY_PROFILE_CACHE_KEY,
+                JSON.stringify({ at: Date.now(), data })
+              );
+            } catch {
+              /* ignore */
+            }
+          }
+        })
+        .catch(() => {
+          if (!background) {
+            setTraitCards([]);
+            setActiveCards7d([]);
+            setActiveCards30d([]);
+          }
+        })
+        .finally(() => {
+          if (!background) setIsLoadingTraits(false);
+        });
+    },
+    [nickname, applyProfileData]
+  );
+
+  useEffect(() => {
+    type CacheEntry = {
+      at: number;
+      data: {
+        confirmedCards?: TraitCardPlaceholder[];
+        cards?: TraitCardPlaceholder[];
+        activeCards7d?: TraitCardPlaceholder[];
+        activeCards30d?: TraitCardPlaceholder[];
+        extinctTraits?: { traitId: string; label: string }[];
+      };
+    };
+    let cached: CacheEntry | null = null;
+    if (typeof window !== "undefined") {
+      try {
+        const raw = getAppStorage().getItem(PERSONALITY_PROFILE_CACHE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as unknown;
+          if (
+            parsed &&
+            typeof parsed === "object" &&
+            "data" in parsed &&
+            "at" in parsed &&
+            typeof (parsed as CacheEntry).at === "number" &&
+            Date.now() - (parsed as CacheEntry).at < PERSONALITY_CACHE_TTL_MS
+          ) {
+            cached = parsed as CacheEntry;
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    if (cached?.data) {
+      applyProfileData(cached.data);
+      fetchPersonalityProfile(true);
+    } else {
+      fetchPersonalityProfile();
+    }
+  }, [fetchPersonalityProfile, applyProfileData]);
+
+  useEffect(() => {
+    const onUpdate = () => fetchPersonalityProfile(true);
+    window.addEventListener("report-updated", onUpdate);
+    return () => window.removeEventListener("report-updated", onUpdate);
+  }, [fetchPersonalityProfile]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") (window as unknown as { __setTestTraitPositive?: () => void }).__setTestTraitPositive = setTestTraitPositive15;
+    return () => {
+      if (typeof window !== "undefined") delete (window as unknown as { __setTestTraitPositive?: () => void }).__setTestTraitPositive;
+    };
   }, []);
 
   useEffect(() => {
@@ -291,8 +513,26 @@ export default function ConstellationPage() {
     };
   }, []);
 
-  const traitCards: TraitCardPlaceholder[] = [];
   const scoresHistory = useMemo(() => getAllScoresHistory(), [data]);
+
+  /** 카드별 레벨(1~5): traitCounts 기준 (장기) */
+  const traitCardsWithLevel = useMemo(() => {
+    if (typeof window === "undefined") return traitCards.map((c) => ({ ...c, level: 1 as TraitLevel }));
+    const ar = getIdentityArchive();
+    return traitCards.map((c) => ({
+      ...c,
+      level: getTraitLevel(ar.traitCounts[c.traitId ?? ""] ?? 7) as TraitLevel,
+    }));
+  }, [traitCards]);
+
+  /** 요즘의 나: 7d/30d 선택에 따른 카드 목록 + 최근 기준 레벨 */
+  const activeCardsWithLevel = useMemo(() => {
+    const list = activeRange === "7d" ? activeCards7d : activeCards30d;
+    return list.map((c) => ({
+      ...c,
+      level: getTraitLevelRecent(c.recentCount ?? 0) as TraitLevel,
+    }));
+  }, [activeRange, activeCards7d, activeCards30d]);
 
   const sevenDaysAgoForGraduate = useMemo(() => {
     const t = new Date().getTime() - SEVEN_DAYS_MS;
@@ -336,11 +576,12 @@ export default function ConstellationPage() {
     return ids;
   }, [data, sevenDaysAgo]);
 
-  /** 7일이 지나 궤도 밖으로 나간 별은 밤하늘에서 제거 (저장된 스냅샷만 표시, 나의 성격 누적에는 영향 없음) */
+  /** '지금' 전용: 일기 날짜(diaryDate)가 오늘 포함 최근 7일 이내인 별만 표시. 분석 시점이 아닌 일기 날짜 기준. */
   const visibleStars = useMemo(() => {
     if (!data?.stars?.length) return [];
-    return data.stars.filter((s) => s.date >= sevenDaysAgo && !graduatedStarIds.has(s.id));
-  }, [data, sevenDaysAgo, graduatedStarIds]);
+    const last7DayDateSet = getLast7DayDateSet();
+    return data.stars.filter((s) => last7DayDateSet.has(s.date) && !graduatedStarIds.has(s.id));
+  }, [data, graduatedStarIds]);
   const visibleStarIds = useMemo(() => new Set(visibleStars.map((s) => s.id)), [visibleStars]);
 
   const { skyStars, skyConnections } = useMemo(() => {
@@ -465,7 +706,7 @@ export default function ConstellationPage() {
   const vb = { x: -8, y: -8, w: 116, h: 116 };
   const selectedStarIds = selected ? new Set(selected.starIds) : new Set<string>();
 
-  /** 밤하늘에 표시할 별: 최근 7일 이내만 (스냅샷 즉시 표시, 분석 호출 없음) */
+  /** 밤하늘에 표시할 별: 최근 7일 이내만 (스냅샷 즉시 표시, 분석 호출 없음). 원본 좌표 유지. */
   const atlasStars = useMemo(() => {
     return visibleStars.map((s) => ({
       id: s.id,
@@ -476,7 +717,57 @@ export default function ConstellationPage() {
     }));
   }, [visibleStars]);
 
-  /** Atlas 연결선: 최근 7일 이내 별끼리만 (궤도 밖 별 제외) */
+  /** 표현용 좌표: bbox 스케일/이동 후 repulsion 적용. 스토리지/원본 변경 없음. */
+  const displayStars = useMemo(() => {
+    if (atlasStars.length === 0) return [];
+    const pts = atlasStars.map((s) => ({ ...s, left: s.left, top: s.top }));
+    const minX = Math.min(...pts.map((p) => p.left));
+    const maxX = Math.max(...pts.map((p) => p.left));
+    const minY = Math.min(...pts.map((p) => p.top));
+    const maxY = Math.max(...pts.map((p) => p.top));
+    const rangeX = maxX - minX || 1;
+    const rangeY = maxY - minY || 1;
+    const scale = Math.min((100 - 2 * MAP_PADDING) / rangeX, (100 - 2 * MAP_PADDING) / rangeY, 1.8);
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    for (const p of pts) {
+      p.left = 50 + (p.left - cx) * scale;
+      p.top = 50 + (p.top - cy) * scale;
+    }
+    for (let iter = 0; iter < REPULSION_ITERATIONS; iter++) {
+      const dx: Record<string, number> = {};
+      const dy: Record<string, number> = {};
+      for (const s of pts) {
+        dx[s.id] = 0;
+        dy[s.id] = 0;
+      }
+      for (let i = 0; i < pts.length; i++) {
+        for (let j = i + 1; j < pts.length; j++) {
+          const a = pts[i]!;
+          const b = pts[j]!;
+          const dist = Math.hypot(a.left - b.left, a.top - b.top);
+          if (dist < MIN_DIST_VIEW && dist > 0.01) {
+            const push = (MIN_DIST_VIEW - dist) / 2;
+            const nx = (a.left - b.left) / dist;
+            const ny = (a.top - b.top) / dist;
+            dx[a.id]! += nx * push;
+            dy[a.id]! += ny * push;
+            dx[b.id]! -= nx * push;
+            dy[b.id]! -= ny * push;
+          }
+        }
+      }
+      for (const p of pts) {
+        p.left += dx[p.id] ?? 0;
+        p.top += dy[p.id] ?? 0;
+        p.left = Math.max(2, Math.min(98, p.left));
+        p.top = Math.max(2, Math.min(98, p.top));
+      }
+    }
+    return pts;
+  }, [atlasStars]);
+
+  /** Atlas 연결선: 참고용. 실제 렌더는 mapSegmentsToDraw만 사용. */
   const atlasConnections = useMemo(() => {
     if (!data?.connections?.length || atlasStars.length === 0) return [];
     return data.connections.filter((c) => visibleStarIds.has(c.from) && visibleStarIds.has(c.to));
@@ -507,15 +798,156 @@ export default function ConstellationPage() {
       const { categoryId } = assignCategory(virtual, scoresHistory);
       const info = CATEGORY_COLORS[categoryId as keyof typeof CATEGORY_COLORS] ?? CATEGORY_COLORS.reconcile;
       const radialSegments = style === "C" ? pts.map((s) => ({ cx: centroid.x, cy: centroid.y, x: s.left, y: s.top })) : [];
-      const nameOffsetY = list.length * 6;
-      const namePosition = { x: centroid.x, y: Math.max(10, Math.min(90, centroid.y + nameOffsetY)) };
+      const sortedByDate = [...pts].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
+      const latestStar = sortedByDate[0];
+      const namePosition = latestStar
+        ? { x: latestStar.left, y: Math.max(8, latestStar.top - 5) }
+        : { x: Math.max(5, Math.min(95, centroid.x)), y: Math.max(8, Math.min(92, centroid.y - 5)) };
       list.push({ constellation: ac, visibleStarIds: new Set(visibleIds), centroid, connectionStyle: style, categoryRgb: info.colorRgb, radialSegments, namePosition });
     }
     return list;
   }, [activeConstellations, visibleStarIds, atlasStars, scoresHistory]);
 
+  /** 별자리별 메인 별 최대 N개: degree + keywordsCount + size 기반 점수 상위. 연결선은 이 별들끼리만. */
+  const mainStarIdsByConstellation = useMemo(() => {
+    const connCount = new Map<string, number>();
+    if (data?.connections) {
+      for (const c of data.connections) {
+        if (visibleStarIds.has(c.from)) connCount.set(c.from, (connCount.get(c.from) ?? 0) + 1);
+        if (visibleStarIds.has(c.to)) connCount.set(c.to, (connCount.get(c.to) ?? 0) + 1);
+      }
+    }
+    const result = new Map<string, Set<string>>();
+    for (const meta of activeConstellationsMeta) {
+      const ids = [...meta.visibleStarIds];
+      const withScore = ids.map((id) => {
+        const degree = connCount.get(id) ?? 0;
+        const star = atlasStars.find((s) => s.id === id);
+        const keywordsCount = star?.keywords?.length ?? 0;
+        const rawStar = data?.stars?.find((s) => s.id === id);
+        const contentProxy = (rawStar as { size?: number } | undefined)?.size ?? 0;
+        const score = degree + keywordsCount * 2 + contentProxy * 0.2;
+        return { id, score };
+      });
+      withScore.sort((a, b) => b.score - a.score);
+      const mainIds = new Set(withScore.slice(0, MAX_MAIN_STARS_PER_CONSTELLATION).map((x) => x.id));
+      result.set(meta.constellation.id, mainIds);
+    }
+    return result;
+  }, [activeConstellationsMeta, atlasStars, data?.connections, data?.stars, visibleStarIds]);
+
+  /** 지도에 그릴 연결선: 활성 별자리 메인 별끼리만, 직선. 대표 1개만 강조·나머지 매우 연하게. */
+  const mapSegmentsToDraw = useMemo(() => {
+    const primaryId =
+      highlightedStarIds.size >= 2
+        ? activeConstellationsMeta.find((m) => [...m.visibleStarIds].every((id) => highlightedStarIds.has(id)))?.constellation.id ??
+          activeConstellationsMeta[0]?.constellation.id
+        : activeConstellationsMeta[0]?.constellation.id;
+    const displayById = new Map(displayStars.map((s) => [s.id, s]));
+    type Seg = { x1: number; y1: number; x2: number; y2: number; colorRgb: string; isPrimary: boolean; isHighlighted: boolean };
+    const segments: Seg[] = [];
+    for (const meta of activeConstellationsMeta) {
+      const mainIds = mainStarIdsByConstellation.get(meta.constellation.id);
+      if (!mainIds || mainIds.size < 2) continue;
+      const isPrimary = meta.constellation.id === primaryId;
+      const isHighlighted =
+        highlightedStarIds.size >= 2 && [...meta.visibleStarIds].every((id) => highlightedStarIds.has(id));
+      if (meta.connectionStyle === "C") {
+        const centroidPts = [...mainIds].map((id) => displayById.get(id)).filter(Boolean) as { left: number; top: number }[];
+        if (centroidPts.length >= 1) {
+          const cx = centroidPts.reduce((a, p) => a + p.left, 0) / centroidPts.length;
+          const cy = centroidPts.reduce((a, p) => a + p.top, 0) / centroidPts.length;
+          for (const id of mainIds) {
+            const p = displayById.get(id);
+            if (!p) continue;
+            segments.push({
+              x1: cx,
+              y1: cy,
+              x2: p.left,
+              y2: p.top,
+              colorRgb: meta.categoryRgb,
+              isPrimary,
+              isHighlighted,
+            });
+          }
+        }
+      } else {
+        const ordered = orderStarIdsBySimilarity([...mainIds]);
+        for (let i = 0; i < ordered.length - 1; i++) {
+          const fromId = ordered[i]!;
+          const toId = ordered[i + 1]!;
+          const fromP = displayById.get(fromId);
+          const toP = displayById.get(toId);
+          if (!fromP || !toP) continue;
+          segments.push({
+            x1: fromP.left,
+            y1: fromP.top,
+            x2: toP.left,
+            y2: toP.top,
+            colorRgb: meta.categoryRgb,
+            isPrimary,
+            isHighlighted,
+          });
+        }
+      }
+    }
+    return segments;
+  }, [activeConstellationsMeta, mainStarIdsByConstellation, displayStars, highlightedStarIds, scoresHistory]);
+
+  /** 표현 좌표 기준 이름 위치(대표 별자리만 라벨 표시용). */
+  const primaryMetaForLabel = useMemo(() => {
+    const primaryId =
+      highlightedStarIds.size >= 2
+        ? activeConstellationsMeta.find((m) => [...m.visibleStarIds].every((id) => highlightedStarIds.has(id)))?.constellation.id ??
+          activeConstellationsMeta[0]?.constellation.id
+        : activeConstellationsMeta[0]?.constellation.id;
+    const meta = activeConstellationsMeta.find((m) => m.constellation.id === primaryId);
+    if (!meta) return null;
+    const pts = displayStars.filter((s) => meta.visibleStarIds.has(s.id));
+    if (pts.length === 0) return { ...meta, namePosition: { x: 50, y: 50 } };
+    const sorted = [...pts].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
+    const latest = sorted[0]!;
+    const x = Math.max(18, Math.min(82, latest.left));
+    const y = Math.max(8, Math.min(92, latest.top - 4));
+    return {
+      ...meta,
+      namePosition: { x, y },
+    };
+  }, [activeConstellationsMeta, displayStars, highlightedStarIds]);
+
+  /** 리스트-지도 동기화: 최근 7일 별이 2개 이상인 별자리만 표시 (지도와 동일 기준) */
+  const visibleActiveConstellations = useMemo(() => {
+    return activeConstellations.filter((ac) => {
+      const visibleCount = (ac.starIds ?? []).filter((id) => visibleStarIds.has(id)).length;
+      return visibleCount >= 2;
+    });
+  }, [activeConstellations, visibleStarIds]);
+
   const defaultConnectionStyle: ConnectionStyle = "B";
-  const allRadialSegments = useMemo(() => activeConstellationsMeta.flatMap((m) => m.radialSegments), [activeConstellationsMeta]);
+
+  /** 데이터 무결성: localStorage current_active_constellations vs 지도에 실제로 그려진 별자리 수 확인 */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const fromStorage = getActiveConstellations();
+    console.log("[Constellation Map] localStorage current_active_constellations:", fromStorage.length, fromStorage.map((c) => ({ name: c.name, starIds: c.starIds?.length ?? 0 })));
+    console.log("[Constellation Map] Rendered on map (activeConstellationsMeta):", activeConstellationsMeta.length, activeConstellationsMeta.map((m) => m.constellation.name));
+    if (fromStorage.length !== activeConstellationsMeta.length) {
+      const renderedIds = new Set(activeConstellationsMeta.map((m) => m.constellation.id));
+      const omitted = fromStorage.filter((c) => !renderedIds.has(c.id));
+      console.log("[Constellation Map] Omitted (visible stars < 2 or not in view):", omitted.map((c) => c.name));
+    }
+  }, [activeConstellationsMeta]);
+
+  /** 7일이 지나 지도/리스트에서 사라진 별자리는 별 서재(아카이브 후보)로 자동 이전 */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    for (const ac of activeConstellations) {
+      const starIds = ac.starIds ?? [];
+      if (starIds.length < 2) continue;
+      const visibleCount = starIds.filter((id) => visibleStarIds.has(id)).length;
+      if (visibleCount < 2) addArchiveCandidateFromActive(ac);
+    }
+  }, [activeConstellations, visibleStarIds]);
 
   function getConnectionPath(c: { from: string; to: string }, style: ConnectionStyle = "B") {
     const fromStar = atlasStars.find((s) => s.id === c.from);
@@ -542,6 +974,7 @@ export default function ConstellationPage() {
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: NIGHT_BG }}>
+      {isLoadingTraits && <LoadingOverlay message="constellation" />}
       <div className="h-12" />
       <header className="flex items-center justify-between px-6 mb-4">
         <div>
@@ -551,19 +984,13 @@ export default function ConstellationPage() {
       </header>
 
       <main className="flex-1 px-6 pb-24 overflow-y-auto space-y-6">
-        {/* ─── [닉네임]님의 지금 ─── */}
+        {/* ─── 상단 지도: 순수 시각 분위기 (텍스트 설명 없음, 별자리 이름만 아우라와 함께) ─── */}
         <section
           className="rounded-3xl overflow-hidden border border-white/10 shadow-2xl backdrop-blur-sm"
-          style={{ backgroundColor: NAVY_CARD }}
+          style={{ backgroundColor: NAVY_CARD, marginBottom: 24 }}
         >
-          <div className="px-4 py-3 border-b border-white/10">
-            <h2 className="text-sm font-semibold" style={{ color: CHAMPAGNE_GOLD }}>
-              {nickname || "당신"}님의 지금
-            </h2>
-            <p className="text-[11px] text-slate-400 mt-0.5">최근 7일간 볼 수 있는 별자리입니다.</p>
-          </div>
           <div
-            className="relative h-[300px] overflow-hidden rounded-b-3xl"
+            className="relative h-[300px] overflow-hidden rounded-3xl p-4"
             style={{ backgroundColor: "#0a0a0f" }}
             onClick={handleBackdropClick}
           >
@@ -594,7 +1021,7 @@ export default function ConstellationPage() {
                 />
               );
             })}
-            {atlasStars.length > 0 ? (
+            {displayStars.length > 0 ? (
               <>
                 {/* 연결선 (SVG, % 좌표) */}
                 <svg
@@ -632,103 +1059,57 @@ export default function ConstellationPage() {
                       <stop offset="100%" stopColor="rgba(253,230,138,0)" />
                     </linearGradient>
                   </defs>
-                  {/* 1) 신규 연결: 가느다란 실선 (방사형은 radial, 아니면 atlasConnections) */}
+                  {/* 연결선: 활성 별자리 메인 별끼리만, 직선. 대표만 강조·나머지 0.08. */}
                   <g>
-                    {allRadialSegments.length > 0
-                      ? allRadialSegments.map((seg, i) => (
-                          <line
-                            key={`radial-solid-${i}`}
-                            x1={seg.cx}
-                            y1={seg.cy}
-                            x2={seg.x}
-                            y2={seg.y}
-                            stroke="rgba(253,230,138,0.55)"
-                            strokeWidth={0.45}
-                            strokeLinecap="round"
-                          />
-                        ))
-                      : atlasConnections.map((c) => (
-                          <path
-                            key={`atlas-solid-${c.from}-${c.to}`}
-                            d={getConnectionPath(c, defaultConnectionStyle)}
-                            fill="none"
-                            stroke="rgba(253,230,138,0.5)"
-                            strokeWidth={0.45}
-                            strokeLinecap="round"
-                          />
-                        ))}
-                  </g>
-                  {/* 2) 군집 연결: 카테고리 색 빛의 선 (방사형별 색 + path별 색) */}
-                  <g filter="url(#constellationLightLine)">
-                    {activeConstellationsMeta.map((meta, mi) =>
-                      meta.connectionStyle === "C"
-                        ? meta.radialSegments.map((seg, i) => (
-                            <line
-                              key={`radial-glow-${mi}-${i}`}
-                              x1={seg.cx}
-                              y1={seg.cy}
-                              x2={seg.x}
-                              y2={seg.y}
-                              stroke={`rgba(${meta.categoryRgb},0.55)`}
-                              strokeWidth={0.7}
-                              strokeLinecap="round"
-                            />
-                          ))
-                        : null
-                    )}
-                    {constellationPathsWithColor.map((seg, i) => {
-                      const fromStar = atlasStars.find((s) => s.id === seg.from);
-                      const toStar = atlasStars.find((s) => s.id === seg.to);
-                      if (!fromStar || !toStar) return null;
-                      const x1 = fromStar.left;
-                      const y1 = fromStar.top;
-                      const x2 = toStar.left;
-                      const y2 = toStar.top;
-                      const d = seg.curved
-                        ? (() => {
-                            const mx = (x1 + x2) / 2;
-                            const my = (y1 + y2) / 2;
-                            const dx = (y2 - y1) * 0.2;
-                            const dy = (x1 - x2) * 0.2;
-                            return `M ${x1} ${y1} Q ${mx + dx} ${my + dy} ${x2} ${y2}`;
-                          })()
-                        : `M ${x1} ${y1} L ${x2} ${y2}`;
+                    {mapSegmentsToDraw.map((seg, i) => {
+                      const opacity = seg.isPrimary
+                        ? seg.isHighlighted
+                          ? HIGHLIGHT_LINE_OPACITY
+                          : NORMAL_LINE_OPACITY
+                        : FADED_LINE_OPACITY;
+                      const strokeW = seg.isPrimary && seg.isHighlighted ? HIGHLIGHT_LINE_WIDTH : NORMAL_LINE_WIDTH;
                       return (
-                        <path
-                          key={`path-glow-${i}-${seg.from}-${seg.to}`}
-                          d={d}
-                          fill="none"
-                          stroke={`rgba(${seg.colorRgb},0.55)`}
-                          strokeWidth={0.7}
+                        <line
+                          key={`seg-${i}-${seg.x1}-${seg.y1}-${seg.x2}-${seg.y2}`}
+                          x1={seg.x1}
+                          y1={seg.y1}
+                          x2={seg.x2}
+                          y2={seg.y2}
+                          stroke={`rgba(${seg.colorRgb},${opacity})`}
+                          strokeWidth={strokeW}
                           strokeLinecap="round"
+                          filter={seg.isPrimary && seg.isHighlighted ? "url(#constellationLightLine)" : undefined}
                         />
                       );
                     })}
                   </g>
                 </svg>
-                {/* 별자리 이름: 원형 배경 제거, 나눔스퀘어라운드 B 18px, 자간 0.05em, 검은색 그림자 */}
-                {activeConstellationsMeta.map((meta) => (
+                {/* 별자리 이름: 대표 1개만, 잘리지 않도록 안쪽 여백·최대폭·2줄 줄바꿈 */}
+                {primaryMetaForLabel && (
                   <div
-                    key={meta.constellation.id}
-                    className="absolute pointer-events-none"
+                    className="absolute pointer-events-none max-w-[72%] px-2 py-1 box-border"
                     style={{
-                      left: `${meta.namePosition.x}%`,
-                      top: `${meta.namePosition.y}%`,
+                      left: `${primaryMetaForLabel.namePosition.x}%`,
+                      top: `${primaryMetaForLabel.namePosition.y}%`,
                       transform: "translate(-50%, -50%)",
                       zIndex: 45,
-                      fontFamily: "var(--font-nanum-square-round-b), sans-serif",
-                      fontWeight: 700,
-                      fontSize: 18,
-                      letterSpacing: "0.05em",
-                      color: "rgba(253,230,138,0.95)",
-                      textShadow: "0 1px 2px rgba(0,0,0,0.8), 0 0 4px rgba(0,0,0,0.5)",
-                      whiteSpace: "nowrap",
+                      fontFamily: "var(--font-a2z-r), sans-serif",
+                      fontSize: 12,
+                      letterSpacing: "0.08em",
+                      color: "rgba(253,230,138,0.92)",
+                      textShadow: "0 0 20px rgba(253,230,138,0.5), 0 0 40px rgba(253,230,138,0.25), 0 1px 3px rgba(0,0,0,0.8)",
+                      whiteSpace: "normal",
+                      wordBreak: "keep-all",
+                      lineHeight: 1.35,
+                      filter: "drop-shadow(0 0 8px rgba(253,230,138,0.4))",
                     }}
                   >
-                    {meta.constellation.name}
+                    <span className="block text-center line-clamp-2">
+                      {primaryMetaForLabel.constellation.name}
+                    </span>
                   </div>
-                ))}
-                {atlasStars.map((star) => {
+                )}
+                {displayStars.map((star) => {
                   const showTooltip = tooltipStarId === star.id;
                   const isHighlighted = highlightedStarIds.has(star.id);
                   const categoryInfo = starToCategoryMap.get(star.id) ?? CATEGORY_COLORS.reconcile;
@@ -824,212 +1205,351 @@ export default function ConstellationPage() {
                 })}
               </>
             ) : null}
-            {atlasStars.length === 0 && (
-              <p className="absolute inset-0 flex items-center justify-center text-sm text-slate-400 px-4">
-                일기를 쓰고 분석하면 별이 쌓여 여기에 그려집니다.
+            {displayStars.length === 0 && (
+              <p className="absolute inset-0 flex items-center justify-center text-sm text-slate-400 px-4 text-center">
+                최근 일주일간 떠오른 별이 없어요. 오늘의 별을 띄워볼까요?
               </p>
             )}
           </div>
         </section>
 
-        {/* ─── 지금 보이는 별자리 (카드 리스트, 탭 시 해당 별자리 강조 + 상세 팝업) ─── */}
+        {/* ─── 요즘의 나: 분석 센터 (7일/30일, trend 강조) ─── */}
         <section
           className="rounded-3xl overflow-hidden border border-white/10 shadow-2xl backdrop-blur-sm"
-          style={{ backgroundColor: NAVY_CARD }}
+          style={{ backgroundColor: NAVY_CARD, marginBottom: 28 }}
         >
-          <div className="px-4 py-3 border-b border-white/10">
-            <h2 className="text-sm font-semibold" style={{ color: CHAMPAGNE_GOLD }}>
-              지금 보이는 별자리
-            </h2>
-            <p className="text-[11px] text-slate-400 mt-0.5">탭하면 해당 별자리의 설명을 볼 수 있어요.</p>
-          </div>
-          <div className="px-4 py-3 space-y-2">
-            {activeConstellations.length > 0 ? (
-              activeConstellations.map((ac) => {
-                const starIds = ac.starIds ?? [];
-                const isHighlighted = starIds.length > 0 && starIds.every((id) => highlightedStarIds.has(id));
+          <div className="px-4 py-4 border-b border-white/10">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <h2 className="text-sm font-semibold" style={{ color: CHAMPAGNE_GOLD }}>
+                  요즘의 나
+                </h2>
+                <p className="text-[11px] text-slate-400 mt-0.5">최근 기록에서 보인 면모 · 선택한 기간에 따른 변화</p>
+              </div>
+              <div
+                className="flex rounded-full overflow-hidden border border-amber-200/30 shadow-inner"
+                style={{ backgroundColor: "rgba(15,23,42,0.9)" }}
+              >
+                <button
+                  type="button"
+                  className={`relative px-4 py-2 text-xs font-medium transition-all duration-200 ${activeRange === "7d" ? "text-amber-100" : "text-slate-400 hover:text-slate-300"}`}
+                  style={
+                    activeRange === "7d"
+                      ? {
+                          backgroundColor: "rgba(253,230,138,0.2)",
+                          boxShadow: "inset 0 0 0 1px rgba(253,230,138,0.35)",
+                        }
+                      : undefined
+                  }
+                  onClick={() => setActiveRange("7d")}
+                >
+                  7일
+                </button>
+                <button
+                  type="button"
+                  className={`relative px-4 py-2 text-xs font-medium transition-all duration-200 ${activeRange === "30d" ? "text-amber-100" : "text-slate-400 hover:text-slate-300"}`}
+                  style={
+                    activeRange === "30d"
+                      ? {
+                          backgroundColor: "rgba(253,230,138,0.2)",
+                          boxShadow: "inset 0 0 0 1px rgba(253,230,138,0.35)",
+                        }
+                      : undefined
+                  }
+                  onClick={() => setActiveRange("30d")}
+                >
+                  30일
+                </button>
+              </div>
+            </div>
+            {/* 필터 칩: 전체 | 정서 | 관계 | 일 | 사고방식 | 자아 | 가치관 (한글만) */}
+            <div className="flex flex-wrap gap-1.5 mt-3">
+              {(["all", ...TRAIT_CATEGORY_ORDER] as const).map((key) => {
+                const label = key === "all" ? "전체" : TRAIT_CATEGORY_LABELS[key];
+                const isActive = activeCategoryFilter === key;
                 return (
-                  <motion.button
-                    key={ac.id}
+                  <button
+                    key={key}
                     type="button"
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`w-full text-left rounded-xl px-4 py-3 border transition-colors ${
-                      isHighlighted ? "border-amber-200/60" : "border-amber-200/20 hover:border-amber-200/40"
-                    }`}
-                    style={{ backgroundColor: isHighlighted ? "rgba(253,230,138,0.15)" : "rgba(253,230,138,0.08)" }}
-                    onClick={() => {
-                      setHighlightedStarIds(new Set(starIds));
-                      const keywords: string[] = [];
-                      const seen = new Set<string>();
-                      for (const id of starIds) {
-                        const s = atlasStars.find((x) => x.id === id);
-                        if (s?.keywords) for (const k of s.keywords) if (k && !seen.has(k)) { seen.add(k); keywords.push(k); }
-                      }
-                      const virtual = { id: ac.id, name: "", summary: "", starIds };
-                      const { categoryId } = assignCategory(virtual, scoresHistory);
-                      const categoryLabel = CATEGORY_COLORS[categoryId as keyof typeof CATEGORY_COLORS]?.label ?? "자아";
-                      setConstellationDetailPopup({
-                        name: ac.name,
-                        meaning: ac.meaning,
-                        keywords,
-                        categoryLabel,
-                      });
+                    onClick={() => setActiveCategoryFilter(key)}
+                    className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors"
+                    style={{
+                      backgroundColor: isActive ? "rgba(253,230,138,0.2)" : "rgba(255,255,255,0.06)",
+                      color: isActive ? CHAMPAGNE_GOLD : "rgba(226,232,240,0.8)",
+                      border: isActive ? "1px solid rgba(253,230,138,0.4)" : "1px solid transparent",
                     }}
                   >
-                    <h3 className="text-sm font-semibold text-white shrink-0 flex items-center gap-1.5">
-                      ✦ {ac.name}
-                    </h3>
-                  </motion.button>
+                    {label}
+                  </button>
                 );
-              })
-            ) : (
-              <p className="text-sm text-slate-400 py-5 text-center">일기를 쓰고 분석하면 여기에 지금 보이는 별자리가 나타납니다.</p>
+              })}
+            </div>
+          </div>
+          <div
+            className="px-4 py-3 grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[56vh] overflow-y-auto overflow-x-hidden pr-1"
+            style={{ scrollBehavior: "smooth" }}
+          >
+            {(activeCategoryFilter === "all" ? activeCardsWithLevel : activeCardsWithLevel.filter((c) => c.category === activeCategoryFilter)).map((card, idx) => {
+              const catLabel = TRAIT_CATEGORY_LABELS[card.category as TraitCategory];
+              const catIcon = TRAIT_CATEGORY_ICONS[card.category as TraitCategory];
+              const level = "level" in card ? (card as { level?: TraitLevel }).level ?? 1 : 1;
+              const recentCount = card.recentCount ?? 0;
+              const trend = card.trend ?? "stable";
+              const trendUp = trend === "up";
+              const trendDown = trend === "down";
+              const glow = level >= 3 ? "0 0 8px rgba(253,230,138,0.2), 0 0 1px rgba(253,230,138,0.4)" : "0 0 1px rgba(253,230,138,0.25)";
+              return (
+                <motion.button
+                  key={card.traitId ?? `${card.category}-active-${idx}`}
+                  type="button"
+                  onClick={() => setTraitPopupCard(card)}
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.26, delay: idx * 0.02 }}
+                  className="rounded-xl overflow-hidden text-left flex flex-col relative border transition-colors aspect-[2] min-h-[92px] max-h-[108px]"
+                  style={{
+                    backgroundColor: "rgba(15,23,42,0.7)",
+                    borderColor: trendUp ? "rgba(134,239,172,0.3)" : trendDown ? "rgba(248,113,113,0.28)" : "rgba(253,230,138,0.22)",
+                    boxShadow: glow,
+                  }}
+                >
+                  {trendUp && (
+                    <div className="absolute left-0 top-0 bottom-0 w-0.5" style={{ backgroundColor: "rgba(134,239,172,0.5)" }} aria-hidden />
+                  )}
+                  {trendDown && (
+                    <div className="absolute left-0 top-0 bottom-0 w-0.5" style={{ backgroundColor: "rgba(248,113,113,0.45)" }} aria-hidden />
+                  )}
+                  <div
+                    className="absolute top-0 left-0 pt-2 pl-2 flex items-center gap-1 text-[9px] font-medium tracking-wide z-10"
+                    style={{ color: "rgba(253,230,138,0.85)", fontFamily: "var(--font-a2z-m), sans-serif" }}
+                  >
+                    <span aria-hidden>{catIcon}</span>
+                    <span>{catLabel}</span>
+                  </div>
+                  <div className="flex-1 flex items-center justify-center px-3 pt-8 pb-8 text-center min-h-0">
+                    <span
+                      className="text-sm font-semibold leading-tight break-keep"
+                      style={{ color: CHAMPAGNE_GOLD, wordBreak: "keep-all", lineHeight: 1.45 }}
+                    >
+                      {card.traitLabel}
+                    </span>
+                  </div>
+                  <div className="absolute bottom-0 right-0 pr-2.5 pb-2 flex items-center gap-1.5">
+                    <span className="text-[10px] text-slate-500">최근 {recentCount}회</span>
+                    {trendUp && (
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold" style={{ backgroundColor: "rgba(134,239,172,0.2)", color: "rgb(134,239,172)" }}>↑</span>
+                    )}
+                    {trendDown && (
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold" style={{ backgroundColor: "rgba(248,113,113,0.2)", color: "rgb(248,113,113)" }}>↓</span>
+                    )}
+                  </div>
+                </motion.button>
+              );
+            })}
+            {(activeCategoryFilter === "all" ? activeCardsWithLevel : activeCardsWithLevel.filter((c) => c.category === activeCategoryFilter)).length === 0 && (
+              <p className="col-span-2 md:col-span-3 text-xs text-slate-500 py-6 text-center">
+                {activeCategoryFilter === "all" ? "이 기간에 기록된 성격 면모가 없어요. 일기를 쓰면 채워져요." : "이 기간·카테고리에 기록된 성격 면모가 없어요."}
+              </p>
             )}
           </div>
         </section>
 
-        {/* 별자리 상세 팝업: 이름, 키워드, 의미 */}
-        <AnimatePresence>
-          {constellationDetailPopup && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
-              onClick={() => {
-                setConstellationDetailPopup(null);
-                setHighlightedStarIds(new Set());
-              }}
-            >
-              <motion.div
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.9, opacity: 0 }}
-                onClick={(e) => e.stopPropagation()}
-                className="w-full max-w-sm rounded-2xl border border-amber-200/30 p-5 shadow-2xl"
-                style={{ backgroundColor: NAVY_CARD }}
-              >
-                <h3 className="text-base font-bold text-white flex items-center gap-2 mb-2">
-                  ✦ {constellationDetailPopup.name}
-                </h3>
-                <p className="text-xs text-slate-300 mb-3 leading-relaxed">
-                  당신의 <span className="font-semibold" style={{ color: CHAMPAGNE_GOLD }}>{constellationDetailPopup.categoryLabel}</span>{getSubjectParticle(constellationDetailPopup.categoryLabel)} 별자리가 되어 반짝이고 있네요.
-                </p>
-                {constellationDetailPopup.keywords.length > 0 && (
-                  <p className="text-[11px] text-slate-400 mb-2">포함된 키워드</p>
-                )}
-                <div className="flex flex-wrap gap-1.5 mb-3">
-                  {constellationDetailPopup.keywords.slice(0, 9).map((kw, i) => (
-                    <span
-                      key={i}
-                      className="px-2 py-0.5 rounded-full text-xs"
-                      style={{ backgroundColor: "rgba(253,230,138,0.2)", color: CHAMPAGNE_GOLD }}
-                    >
-                      {kw}
-                    </span>
-                  ))}
-                </div>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  {constellationDetailPopup.meaning}
-                </p>
-                <p className="text-[10px] text-slate-500 mt-3">별지기가 분석한 이 별자리가 당신의 자아에서 갖는 의미예요.</p>
-                <button
-                  type="button"
-                  className="mt-4 w-full rounded-xl py-2.5 text-sm font-medium text-white"
-                  style={{ backgroundColor: "rgba(253,230,138,0.25)", color: CHAMPAGNE_GOLD }}
-                  onClick={() => {
-                    setConstellationDetailPopup(null);
-                    setHighlightedStarIds(new Set());
-                  }}
-                >
-                  닫기
-                </button>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* ─── 6대 별자리 와이드 카드: 정서, 관계, 일, 사고방식, 자아, 가치관 ─── */}
-        <section className="space-y-4">
+        {/* ─── 진정한 나: 카테고리 그룹 + 아코디언 ─── */}
+        <section className="space-y-4" style={{ marginTop: 32, paddingTop: 20, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
           <div>
             <h2 className="text-sm font-semibold" style={{ color: CHAMPAGNE_GOLD }}>
-              나의 성격과 자아
+              진정한 나
             </h2>
-            <p className="text-[11px] text-slate-400 mt-0.5">별지기가 발견한 {nickname || "당신"}님의 자아</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">별지기가 발견한 {nickname || "당신"}님의 자아 · 시간이 쌓인 본질적인 면모</p>
           </div>
 
-          <div className="space-y-3">
-            {(traitCards.length > 0 ? traitCards : Array.from({ length: 6 }, (_, i) => ({ category: ["emotional", "interpersonal", "workStyle", "cognitive", "selfConcept", "values"][i]!, label: ["정서", "관계", "일", "사고방식", "자아", "가치관"][i]!, unlocked: false, traitLabel: "", opening: "", body: "", closing: "", evidence: "" }))).map((card) => (
-              <motion.button
-                key={card.category}
-                type="button"
-                onClick={() => card.unlocked && setTraitPopupCard(card)}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="w-full rounded-xl overflow-hidden text-left min-h-[80px] flex flex-col relative"
-                style={{
-                  backgroundColor: NAVY_CARD,
-                  borderWidth: 1,
-                  borderStyle: "solid",
-                  borderColor: card.unlocked ? "rgba(226,232,240,0.4)" : "rgba(226,232,240,0.15)",
-                }}
-              >
-                {/* 카테고리 명칭: 왼쪽 상단 고정, 적절한 패딩 */}
-                <div
-                  className="absolute top-0 left-0 pt-3 pl-4 flex items-center gap-1 text-xs font-semibold z-20"
-                  style={{
-                    fontFamily: "var(--font-a2z-m), sans-serif",
-                    color: card.unlocked ? CHAMPAGNE_GOLD : SILVER_WHITE,
-                    textShadow: card.unlocked ? "0 0 8px rgba(253,230,138,0.5)" : "none",
-                  }}
-                >
-                  <span className="opacity-100" style={{ fontSize: "10px" }} aria-hidden>✦</span>
-                  <span>{card.label}</span>
-                </div>
+          <div
+            className="space-y-2 max-h-[60vh] overflow-y-auto overflow-x-hidden pr-1"
+            style={{ scrollBehavior: "smooth" }}
+          >
+            {TRAIT_CATEGORY_ORDER.map((cat) => {
+              const catLabel = TRAIT_CATEGORY_LABELS[cat as TraitCategory];
+              const cardsInCat = traitCardsWithLevel.filter((c) => c.category === cat);
+              const count = cardsInCat.length;
+              const maxLevel = count > 0
+                ? (Math.max(...cardsInCat.map((c) => ("level" in c ? (c as { level?: TraitLevel }).level ?? 1 : 1))) as TraitLevel)
+                : null;
+              const maxLevelName = maxLevel != null ? TRAIT_LEVEL_NAMES[maxLevel] : null;
+              const isExpanded = longTermExpanded[cat] ?? false;
 
-                {/* 중앙 콘텐츠 영역 */}
+              return (
                 <div
-                  className="flex-1 flex items-center justify-center pt-8 pb-4 px-4"
-                  style={{ opacity: card.unlocked ? 1 : 0.35 }}
+                  key={cat}
+                  className="rounded-xl overflow-hidden border border-white/10"
+                  style={{ backgroundColor: "rgba(15,23,42,0.5)" }}
                 >
-                  {card.unlocked ? (
-                    <>
-                      <span
-                        className="relative z-10 text-sm font-medium"
-                        style={{
-                          color: CHAMPAGNE_GOLD,
-                          textShadow: "0 0 12px rgba(253,230,138,0.6)",
-                        }}
+                  <button
+                    type="button"
+                    onClick={() => setLongTermExpanded((prev) => ({ ...prev, [cat]: !prev[cat] }))}
+                    className="w-full px-4 py-3 flex items-center justify-between gap-2 text-left"
+                    style={{
+                      fontFamily: "var(--font-a2z-m), sans-serif",
+                      color: CHAMPAGNE_GOLD,
+                      borderBottom: isExpanded ? "1px solid rgba(255,255,255,0.08)" : "none",
+                    }}
+                  >
+                    <span className="text-xs font-semibold flex items-center gap-1.5">
+                      <span aria-hidden style={{ fontSize: "10px" }}>{TRAIT_CATEGORY_ICONS[cat]}</span>
+                      {catLabel}
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-normal">
+                      {count > 0 ? `${count}개` : "0개"}
+                      {maxLevelName != null ? ` · ${maxLevelName}` : ""}
+                    </span>
+                    <span className="text-slate-500 text-[10px]" aria-hidden>
+                      {isExpanded ? "▼" : "▶"}
+                    </span>
+                  </button>
+                  <AnimatePresence initial={false}>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.25, ease: "easeInOut" }}
+                        className="overflow-hidden"
                       >
-                        {card.traitLabel}
-                      </span>
-                      {/* 별무리 글로우 효과 */}
-                      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-                        {Array.from({ length: 12 }).map((_, i) => (
-                          <motion.div
-                            key={i}
-                            className="absolute rounded-full bg-amber-200/40"
-                            style={{
-                              width: 3,
-                              height: 3,
-                              left: `${15 + (i * 7) % 70}%`,
-                              top: `${35 + (i * 8) % 50}%`,
-                            }}
-                            animate={{ opacity: [0.2, 0.7, 0.2] }}
-                            transition={{ duration: 2, repeat: Infinity, delay: i * 0.15 }}
-                          />
-                        ))}
-                      </div>
-                    </>
-                  ) : (
-                    <span className="text-sm text-slate-400">아직 별이 흐릿합니다...</span>
-                  )}
+                        <div className="px-2 py-2 space-y-2">
+                          {count > 0
+                            ? cardsInCat.map((card, idx) => {
+                                const level = "level" in card ? (card as { level?: TraitLevel }).level ?? 1 : 1;
+                                const isFading = card.unlocked && (card as TraitCardPlaceholder).status === "fading";
+                                const borderOpacity = card.unlocked ? 0.35 + level * 0.12 : 0.15;
+                                const glowShadow =
+                                  level >= 4
+                                    ? "0 0 20px rgba(253,230,138,0.35), 0 0 40px rgba(253,230,138,0.15)"
+                                    : level >= 3
+                                      ? "0 0 12px rgba(253,230,138,0.25)"
+                                      : level >= 2
+                                        ? "0 0 8px rgba(253,230,138,0.2)"
+                                        : "none";
+                                const pulseShadowKeyframes =
+                                  level >= 5
+                                    ? [
+                                        "0 0 24px rgba(253,230,138,0.4), 0 0 48px rgba(253,230,138,0.18)",
+                                        "0 0 36px rgba(253,230,138,0.7), 0 0 72px rgba(253,230,138,0.35)",
+                                        "0 0 24px rgba(253,230,138,0.4), 0 0 48px rgba(253,230,138,0.18)",
+                                      ]
+                                    : level >= 4
+                                      ? [
+                                          "0 0 20px rgba(253,230,138,0.3), 0 0 40px rgba(253,230,138,0.12)",
+                                          "0 0 32px rgba(253,230,138,0.5), 0 0 64px rgba(253,230,138,0.22)",
+                                          "0 0 20px rgba(253,230,138,0.3), 0 0 40px rgba(253,230,138,0.12)",
+                                        ]
+                                      : null;
+                                return (
+                                  <motion.button
+                                    key={card.unlocked && card.traitId ? card.traitId : `${card.category}-${idx}`}
+                                    type="button"
+                                    onClick={() => card.unlocked && setTraitPopupCard(card)}
+                                    initial={{
+                                      opacity: 0,
+                                      scale: 0.98,
+                                      y: 8,
+                                      ...(pulseShadowKeyframes ? { boxShadow: pulseShadowKeyframes[0] } : {}),
+                                    }}
+                                    animate={{
+                                      opacity: 1,
+                                      scale: 1,
+                                      y: 0,
+                                      ...(pulseShadowKeyframes ? { boxShadow: pulseShadowKeyframes } : {}),
+                                    }}
+                                    transition={{
+                                      opacity: { duration: 0.28, delay: idx * 0.04 },
+                                      scale: { duration: 0.28, delay: idx * 0.04 },
+                                      y: { duration: 0.28, delay: idx * 0.04 },
+                                      ...(pulseShadowKeyframes
+                                        ? { boxShadow: { duration: 2.2, repeat: Infinity, ease: "easeInOut" } }
+                                        : {}),
+                                    }}
+                                    className="w-full rounded-xl overflow-hidden text-left min-h-[80px] flex flex-col relative"
+                                    style={{
+                                      backgroundColor: NAVY_CARD,
+                                      borderWidth: level >= 3 ? 1.5 : 1,
+                                      borderStyle: "solid",
+                                      borderColor: card.unlocked ? `rgba(253,230,138,${Math.min(0.9, borderOpacity)})` : "rgba(226,232,240,0.15)",
+                                      boxShadow: !pulseShadowKeyframes && level >= 2 ? glowShadow : undefined,
+                                      ...(isFading && { filter: "saturate(0.5)", opacity: 0.82 }),
+                                    }}
+                                  >
+                                    <div
+                                      className="absolute top-0 left-0 pt-3 pl-4 flex items-center gap-1 text-xs font-semibold z-20"
+                                      style={{
+                                        fontFamily: "var(--font-a2z-m), sans-serif",
+                                        color: card.unlocked ? CHAMPAGNE_GOLD : SILVER_WHITE,
+                                        textShadow: card.unlocked ? "0 0 8px rgba(253,230,138,0.5)" : "none",
+                                      }}
+                                    >
+                                      <span className="opacity-100" style={{ fontSize: "10px" }} aria-hidden>{TRAIT_CATEGORY_ICONS[card.category as TraitCategory]}</span>
+                                      <span>{catLabel}</span>
+                                    </div>
+                                    <div
+                                      className="flex-1 flex items-center justify-center pt-8 pb-4 px-4"
+                                      style={{ opacity: card.unlocked ? 1 : 0.35 }}
+                                    >
+                                      {card.unlocked ? (
+                                        <>
+                                          <span className="relative z-10 flex flex-col items-center gap-1">
+                                            <span
+                                              className="text-sm font-medium"
+                                              style={{
+                                                color: CHAMPAGNE_GOLD,
+                                                textShadow: level >= 5 ? "0 0 16px rgba(253,230,138,0.8), 0 0 32px rgba(253,230,138,0.4)" : "0 0 12px rgba(253,230,138,0.6)",
+                                              }}
+                                            >
+                                              {card.traitLabel}
+                                            </span>
+                                            <span className="text-[10px] font-medium" style={{ color: "rgba(253,230,138,0.8)" }}>
+                                              {TRAIT_LEVEL_NAMES[level]}
+                                            </span>
+                                          </span>
+                                          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                                            {Array.from({ length: level >= 3 ? 18 : 12 }).map((_, i) => (
+                                              <motion.div
+                                                key={i}
+                                                className="absolute rounded-full bg-amber-200/40"
+                                                style={{
+                                                  width: level >= 3 ? 2.5 + (i % 3) * 0.5 : 3,
+                                                  height: level >= 3 ? 2.5 + (i % 3) * 0.5 : 3,
+                                                  left: `${10 + (i * 11) % 80}%`,
+                                                  top: `${25 + (i * 13) % 60}%`,
+                                                }}
+                                                animate={{ opacity: [0.2, 0.7, 0.2] }}
+                                                transition={{ duration: 2, repeat: Infinity, delay: i * 0.1 }}
+                                              />
+                                            ))}
+                                          </div>
+                                        </>
+                                      ) : (
+                                        <span className="text-sm text-slate-400">아직 별이 흐릿합니다...</span>
+                                      )}
+                                    </div>
+                                  </motion.button>
+                                );
+                              })
+                            : (
+                              <div
+                                className="w-full rounded-xl min-h-[80px] flex items-center justify-center border border-white/10"
+                                style={{ backgroundColor: "rgba(15,23,42,0.4)" }}
+                              >
+                                <span className="text-sm text-slate-400">아직 별이 흐릿합니다...</span>
+                              </div>
+                            )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
-              </motion.button>
-            ))}
+              );
+            })}
           </div>
         </section>
+
       </main>
 
       {/* 별자리 완성 축하 팝업 */}
@@ -1141,42 +1661,252 @@ export default function ConstellationPage() {
         )}
       </AnimatePresence>
 
-      {/* 성격 지표 상세 팝업 */}
+      {/* 자아 기록 팝업 — 성격 키워드 상세 (The Sanctuary Look) */}
       <AnimatePresence>
         {traitPopupCard && (
           <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/70 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-sm"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
             onClick={() => setTraitPopupCard(null)}
           >
             <motion.div
-              className="rounded-3xl border border-amber-200/20 shadow-2xl p-6 max-w-sm w-full overflow-hidden bg-slate-900/95 backdrop-blur-md"
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl"
+              style={{
+                backgroundColor: "#0A0E1A",
+                border: "1px solid rgba(253, 230, 138, 0.35)",
+                boxShadow: "0 0 0 1px rgba(253,230,138,0.15), 0 25px 50px -12px rgba(0,0,0,0.6)",
+              }}
+              initial={{ y: 48, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 24, opacity: 0 }}
+              transition={{ type: "spring", damping: 26, stiffness: 300 }}
               onClick={(e) => e.stopPropagation()}
             >
-              <p className="text-[10px] uppercase tracking-wider mb-2" style={{ color: CHAMPAGNE_GOLD }}>
-                {traitPopupCard.label}
-              </p>
-              <h3 className="text-lg font-semibold text-white mb-4">{traitPopupCard.traitLabel}</h3>
-              <p className="text-sm text-slate-300 leading-relaxed mb-3">{traitPopupCard.opening}</p>
-              <p className="text-sm text-slate-200 leading-relaxed mb-3">{traitPopupCard.body}</p>
-              {traitPopupCard.evidence && (
-                <p className="text-xs text-slate-400 italic mb-3 border-l-2 border-amber-200/30 pl-3">
-                  {traitPopupCard.evidence}
-                </p>
-              )}
-              <p className="text-sm font-medium" style={{ color: CHAMPAGNE_GOLD }}>{traitPopupCard.closing}</p>
+              {/* 닫기(X) 우측 상단 · 바깥 영역 클릭 시에도 닫힘 */}
               <button
                 type="button"
+                aria-label="닫기"
                 onClick={() => setTraitPopupCard(null)}
-                className="mt-4 w-full py-2.5 rounded-xl bg-white/10 text-slate-200 text-sm font-medium hover:bg-white/15 transition-colors border border-white/10"
+                className="absolute top-4 right-4 w-9 h-9 flex items-center justify-center rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition-colors z-10"
               >
-                닫기
+                <span className="text-lg leading-none">×</span>
               </button>
+
+              <div className="p-6 pt-12 pb-8">
+                {/* 제목: [성격 키워드] + 단계명 — 에이투지체 5Medium */}
+                <motion.header
+                  className="mb-5"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.08, duration: 0.35 }}
+                  style={{ fontFamily: "var(--font-a2z-m), sans-serif" }}
+                >
+                  <h2 className="text-xl font-medium mb-1" style={{ color: CHAMPAGNE_GOLD }}>
+                    {traitPopupCard.traitLabel}
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    {traitPopupCard.recentCount != null
+                      ? "요즘의 면모"
+                      : `별지기가 발견한 ${nickname || "당신"}님의 성격`}
+                    {traitPopupCard.recentCount != null ? (
+                      <span className="ml-1.5 text-amber-200/90">· 최근 {traitPopupCard.recentCount}회</span>
+                    ) : (
+                      traitPopupCard.traitId &&
+                      typeof window !== "undefined" && (
+                        <span className="ml-1.5 text-amber-200/90">
+                          · {TRAIT_LEVEL_NAMES[getTraitLevel(getIdentityArchive().traitCounts[traitPopupCard.traitId] ?? 7) as TraitLevel]} 단계
+                        </span>
+                      )
+                    )}
+                  </p>
+                  {/* 장기 카드: 상태별 별지기 한마디 */}
+                  {traitPopupCard.recentCount == null && (
+                    <p className="text-xs mt-1.5" style={{ color: (traitPopupCard as TraitCardPlaceholder).status === "fading" ? "rgba(148,163,184,0.95)" : "rgba(253,230,138,0.9)" }}>
+                      {(traitPopupCard as TraitCardPlaceholder).status === "fading"
+                        ? "요즘 이런 면모가 잘 보이지 않아요. 최근 이 경향이 희미해지고 있어요."
+                        : "여전히 당신의 중심을 지키고 있는 빛이군요."}
+                    </p>
+                  )}
+                </motion.header>
+
+                {/* 요즘의 면모: 4단 구조 — 제목 / 별지기의 발견(Evidence) / 이 마음이 전하는 이야기(Deep Insight) / 별지기의 응원(Closing) */}
+                {traitPopupCard.recentCount != null ? (
+                  <>
+                    <motion.section
+                      className="mb-5 pt-1"
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.12, duration: 0.35 }}
+                    >
+                      <p
+                        className="text-[11px] font-semibold mb-1.5 text-white tracking-wide"
+                        style={{ fontFamily: "var(--font-a2z-r), sans-serif" }}
+                      >
+                        별지기의 발견
+                      </p>
+                      <p
+                        className="text-sm leading-relaxed text-slate-200 whitespace-pre-line"
+                        style={{
+                          fontFamily: "var(--font-a2z-regular), sans-serif",
+                          lineHeight: 1.8,
+                          letterSpacing: "0.02em",
+                        }}
+                      >
+                        {(() => {
+                          const displayName = nickname || getUserName() || "당신";
+                          const text = (traitPopupCard.opening ?? "").replace(/\[닉네임\]/g, displayName);
+                          return text || "요즘 기록을 보며 이 면모가 자주 느껴졌어요.";
+                        })()}
+                      </p>
+                    </motion.section>
+                    {traitPopupCard.body && (
+                      <motion.section
+                        className="mb-5 pt-3 border-t border-amber-200/15"
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.2, duration: 0.35 }}
+                      >
+                        <p
+                          className="text-[11px] font-semibold mb-1.5 text-white tracking-wide"
+                          style={{ fontFamily: "var(--font-a2z-r), sans-serif" }}
+                        >
+                          이 마음이 전하는 이야기
+                        </p>
+                        <p
+                          className="text-sm leading-relaxed text-amber-100/95 whitespace-pre-line"
+                          style={{
+                            fontFamily: "var(--font-a2z-regular), sans-serif",
+                            lineHeight: 1.75,
+                          }}
+                        >
+                          {(traitPopupCard.body ?? "").replace(/\[닉네임\]/g, nickname || getUserName() || "당신")}
+                        </p>
+                      </motion.section>
+                    )}
+                    <motion.section
+                      className="mb-6 pt-3 border-t border-amber-200/20"
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.28, duration: 0.35 }}
+                    >
+                      <p
+                        className="text-[11px] font-semibold mb-1.5 text-white tracking-wide"
+                        style={{ fontFamily: "var(--font-a2z-r), sans-serif" }}
+                      >
+                        별지기의 응원
+                      </p>
+                      <p
+                        className="text-sm leading-relaxed text-slate-300 whitespace-pre-line"
+                        style={{
+                          fontFamily: "var(--font-a2z-regular), sans-serif",
+                          lineHeight: 1.8,
+                        }}
+                      >
+                        {(traitPopupCard.closing ?? "").replace(/\[닉네임\]/g, nickname || getUserName() || "당신") || "이 면모가 오늘을 버티는 데 한몫했을 거예요."}
+                      </p>
+                    </motion.section>
+                  </>
+                ) : (
+                  <>
+                    <motion.div
+                      className="mb-6"
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.16, duration: 0.35 }}
+                    >
+                      <p
+                        className="text-sm leading-relaxed text-slate-200 whitespace-pre-line"
+                        style={{
+                          fontFamily: "var(--font-a2z-regular), sans-serif",
+                          lineHeight: 1.8,
+                          letterSpacing: "0.02em",
+                        }}
+                      >
+                        {(() => {
+                          const displayName = nickname || getUserName() || "당신";
+                          const raw = [traitPopupCard.opening, traitPopupCard.body, traitPopupCard.closing]
+                            .filter(Boolean)
+                            .join("\n\n");
+                          const text = raw ? raw.replace(/\[닉네임\]/g, displayName) : "";
+                          return text || "별지기가 기록한 이야기가 여기 담겨 있어요.";
+                        })()}
+                      </p>
+                    </motion.div>
+                    {traitPopupCard.evidence && (
+                      <motion.section
+                        className="mb-6 pt-4 border-t border-amber-200/20"
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.32, duration: 0.35 }}
+                      >
+                        <p
+                          className="text-[11px] font-medium mb-2 text-slate-500 tracking-wide"
+                          style={{ fontFamily: "var(--font-a2z-r), sans-serif" }}
+                        >
+                          별지기가 기록한 증거들
+                        </p>
+                        <p
+                          className="text-xs leading-relaxed text-slate-400"
+                          style={{
+                            fontFamily: "var(--font-a2z-r), sans-serif",
+                            lineHeight: 1.7,
+                            letterSpacing: "0.02em",
+                          }}
+                        >
+                          {traitPopupCard.evidence}
+                        </p>
+                      </motion.section>
+                    )}
+                  </>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 100일 미기록으로 목록에서 내려간 성격 안내 팝업 */}
+      <AnimatePresence>
+        {extinctTraitsToNotify.length > 0 && (
+          <motion.div
+            className="fixed inset-0 z-[55] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setExtinctTraitsToNotify([])}
+          >
+            <motion.div
+              className="rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl border border-amber-200/20"
+              style={{ backgroundColor: "#0A0E1A" }}
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-6">
+                <p className="text-sm font-medium mb-2" style={{ color: CHAMPAGNE_GOLD }}>
+                  별지기의 안내
+                </p>
+                <p className="text-sm text-slate-300 leading-relaxed mb-4">
+                  100일간 기록되지 않은 성격은 목록에서 내려갔어요. 다시 일기에 그 면모가 담기면 별이 다시 켜져요.
+                </p>
+                <ul className="text-xs text-slate-400 space-y-1 mb-4">
+                  {extinctTraitsToNotify.map((t) => (
+                    <li key={t.traitId}>· {t.label}</li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  onClick={() => setExtinctTraitsToNotify([])}
+                  className="w-full py-2.5 rounded-xl text-sm font-medium transition-colors"
+                  style={{ backgroundColor: "rgba(253,230,138,0.2)", color: CHAMPAGNE_GOLD }}
+                >
+                  알겠어요
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}

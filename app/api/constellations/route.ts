@@ -299,7 +299,7 @@ export async function POST(req: Request) {
             messages: [
               {
                 role: "system",
-                content: `당신은 사용자의 일기 별자리에 이름과 요약을 부여하는 원예사입니다. JSON만 출력하세요. 예: {"name": "정직한 고독의 별자리", "summary": "혼자 있을 때 가장 솔직해지려 했던 날들이에요."}`,
+                content: `당신은 사용자의 일기 별자리에 이름과 요약을 부여하는 별지기입니다. JSON만 출력하세요. 예: {"name": "정직한 고독의 별자리", "summary": "혼자 있을 때 가장 솔직해지려 했던 날들이에요."}`,
               },
               {
                 role: "user",

@@ -5,12 +5,10 @@ import { usePathname } from "next/navigation";
 import { LU_BALANCE_UPDATED_EVENT, getLuBalance } from "../../lib/lu-balance";
 import { LU_ICON, MIDNIGHT_BLUE } from "../../lib/theme";
 
-const HIDE_LU_PATHS = ["/", "/diary", "/archive", "/bookshelf", "/constellation"];
-
-function pathHidesLu(pathname: string): boolean {
-  if (HIDE_LU_PATHS.includes(pathname)) return true;
-  if (pathname.startsWith("/diary/")) return true;
-  if (pathname.startsWith("/archive/")) return true; // 월간 기록집
+/** 별조각 바를 오른쪽 상단에 표시할 경로: 홈탭, 기록함 탭만 */
+function pathShowsLu(pathname: string): boolean {
+  if (pathname === "/") return true;
+  if (pathname === "/archive") return true;
   return false;
 }
 
@@ -25,7 +23,7 @@ export function LuBalanceBar() {
     return () => window.removeEventListener(LU_BALANCE_UPDATED_EVENT, onUpdate);
   }, []);
 
-  if (pathname && pathHidesLu(pathname)) return null;
+  if (!pathname || !pathShowsLu(pathname)) return null;
 
   return (
     <div

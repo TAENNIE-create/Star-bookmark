@@ -12,9 +12,11 @@ const GOLD_FILTER = "invert(90%) sepia(30%) saturate(2000%) hue-rotate(350deg) b
 const LOCK_GLOW_FILTER = `${GOLD_FILTER} drop-shadow(0 0 4px rgba(253,230,138,0.6)) drop-shadow(0 0 8px rgba(253,230,138,0.3))`;
 
 import { getLuBalance, subtractLu, LU_ARCHIVE_BOOK_UNLOCK } from "../../lib/lu-balance";
+import { COST_PERMANENT_MEMORY_KEY } from "../../lib/economy";
 import { getUserName } from "../../lib/home-greeting";
 import { getUnlockedMonths, setUnlockedMonths } from "../../lib/archive-unlock";
 import { getAppStorage } from "../../lib/app-storage";
+import { openStoreModal } from "../../components/arisum/store-modal-provider";
 
 const REPORT_BY_DATE_KEY = "arisum-report-by-date";
 const SKY_WHITE = "#F4F7FB";
@@ -175,6 +177,21 @@ export default function ArchivePage() {
     setUnlockedMonths(next);
     setUnlocked(next);
     setConfirmUnlockMonth(null);
+    window.dispatchEvent(new Event("lu-balance-updated"));
+    router.push(`/archive/${yearMonth}`);
+  };
+
+  /** 기억의 열쇠: 200 별조각으로 해당 달 영구 소장 (멤버십과 무관 열람·AI 맥락 포함) */
+  const unlockMonthWithMemoryKey = (yearMonth: string) => {
+    if (lu < COST_PERMANENT_MEMORY_KEY || unlocked.has(yearMonth)) return;
+    if (!subtractLu(COST_PERMANENT_MEMORY_KEY)) return;
+    setLu(getLuBalance());
+    const next = new Set(unlocked);
+    next.add(yearMonth);
+    setUnlockedMonths(next);
+    setUnlocked(next);
+    setConfirmUnlockMonth(null);
+    window.dispatchEvent(new Event("lu-balance-updated"));
     router.push(`/archive/${yearMonth}`);
   };
 
@@ -188,26 +205,29 @@ export default function ArchivePage() {
               <h1 className="text-xl font-bold tracking-tight" style={{ color: MIDNIGHT_BLUE }}>
                 기록함
               </h1>
-              <p className="text-xs mt-0.5" style={{ color: "#64748B" }}>한 달이 끝나면 한 권의 기록집이 꽂혀요</p>
+              <p className="text-xs mt-0.5" style={{ color: "#64748B" }}>한 달이 끝나면 한 권의 기록집이 꽂혀요.</p>
             </div>
-            <div
-              className="flex items-center gap-1.5 px-3 py-2 rounded-full backdrop-blur-md"
+            <button
+              type="button"
+              onClick={openStoreModal}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-full backdrop-blur-md cursor-pointer transition-opacity hover:opacity-90"
               style={{
                 backgroundColor: "rgba(255,255,255,0.85)",
                 boxShadow: "0 2px 12px rgba(15,23,42,0.06), inset 0 1px 0 rgba(255,255,255,0.8)",
                 border: "1px solid rgba(255,255,255,0.6)",
                 color: MIDNIGHT_BLUE,
               }}
+              aria-label="별조각 · 상점 열기"
             >
               <span className="text-amber-600 text-sm">{LU_ICON}</span>
               <span className="text-sm font-semibold tabular-nums">{lu}</span>
-            </div>
+            </button>
           </div>
           <div className="mt-4 border-t border-slate-200" />
         </header>
 
         <p className="px-6 mt-4 mb-4 text-xs" style={{ color: "#64748B" }}>
-          월간 기록집을 해금해 {nickname || "당신"}님을 돌아보세요
+          월간 기록집을 해금해 태돌님을 돌아보세요.
         </p>
 
         <main className="flex-1 px-6 pb-24 overflow-y-auto">
@@ -227,7 +247,7 @@ export default function ArchivePage() {
                   onClick={(e) => e.stopPropagation()}
                   className="rounded-2xl bg-white border border-slate-200 p-6 shadow-xl max-w-sm w-full"
                 >
-                  {lu < LU_ARCHIVE_BOOK_UNLOCK ? (
+                  {lu < LU_ARCHIVE_BOOK_UNLOCK && lu < COST_PERMANENT_MEMORY_KEY ? (
                     <>
                       <p className="text-sm font-bold mb-2" style={{ color: MIDNIGHT_BLUE }}>
                         퀘스트로 별조각을 모아 기록집을 완성하세요.
@@ -249,27 +269,56 @@ export default function ArchivePage() {
                   ) : (
                     <>
                       <p className="text-sm font-bold mb-2" style={{ color: MIDNIGHT_BLUE }}>
-                        한 달 기록집을 열려면 별조각 600개가 필요해요.
+                        이 달 기록집을 열어보세요.
                       </p>
                       <p className="text-xs text-[#64748B] mb-4">
-                        별조각을 사용하면 해당 월 기록집을 열람할 수 있어요.
+                        별조각 400으로 한 달 열람하거나, 200으로 기억의 열쇠(영구 소장)할 수 있어요.
                       </p>
-                      <div className="flex gap-2 justify-end">
-                        <button
-                          type="button"
-                          onClick={() => setConfirmUnlockMonth(null)}
-                          className="px-3 py-1.5 text-sm rounded-full bg-slate-100 text-[#64748B] hover:bg-slate-200"
-                        >
-                          취소
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => confirmUnlockMonth && unlockMonth(confirmUnlockMonth)}
-                          className="px-3 py-1.5 text-sm font-medium rounded-full text-white hover:opacity-90"
-                          style={{ backgroundColor: MIDNIGHT_BLUE }}
-                        >
-                          {LU_ICON} 별조각 600개 지불
-                        </button>
+                      <div className="flex flex-col gap-2">
+                        <div className="flex gap-2 justify-end flex-wrap">
+                          <motion.button
+                            type="button"
+                            onClick={() => setConfirmUnlockMonth(null)}
+                            className="px-3 py-1.5 text-sm rounded-full bg-slate-100 text-[#64748B] hover:bg-slate-200"
+                            whileTap={{ scale: 0.97 }}
+                          >
+                            취소
+                          </motion.button>
+                          {lu >= LU_ARCHIVE_BOOK_UNLOCK && (
+                            <motion.button
+                              type="button"
+                              onClick={() => confirmUnlockMonth && unlockMonth(confirmUnlockMonth)}
+                              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-full"
+                              style={{
+                                backgroundColor: MIDNIGHT_BLUE,
+                                color: CHAMPAGNE_GOLD,
+                                boxShadow: "0 0 0 1px rgba(253,230,138,0.25)",
+                              }}
+                              whileTap={{ scale: 0.96 }}
+                              transition={{ duration: 0.15 }}
+                            >
+                              <span className="inline-flex items-center text-[0.85em] leading-none" aria-hidden>{LU_ICON}</span>
+                              <span>{LU_ARCHIVE_BOOK_UNLOCK} 열람</span>
+                            </motion.button>
+                          )}
+                          {lu >= COST_PERMANENT_MEMORY_KEY && (
+                            <motion.button
+                              type="button"
+                              onClick={() => confirmUnlockMonth && unlockMonthWithMemoryKey(confirmUnlockMonth)}
+                              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-full border"
+                              style={{
+                                backgroundColor: "rgba(253,230,138,0.25)",
+                                color: MIDNIGHT_BLUE,
+                                borderColor: "rgba(253,230,138,0.6)",
+                              }}
+                              whileTap={{ scale: 0.96 }}
+                              transition={{ duration: 0.15 }}
+                            >
+                              <span className="inline-flex items-center text-[0.85em] leading-none" aria-hidden>{LU_ICON}</span>
+                              <span>{COST_PERMANENT_MEMORY_KEY} 기억의 열쇠</span>
+                            </motion.button>
+                          )}
+                        </div>
                       </div>
                     </>
                   )}
@@ -383,7 +432,7 @@ export default function ArchivePage() {
                           </h2>
                           {slot.isCurrentMonth && (
                             <p className="text-xs mt-1" style={{ color: "#64748B" }}>
-                              기록을 쌓는 중입니다
+                              기록을 쌓는 중입니다...
                             </p>
                           )}
                           {statusMessage && !slot.isCurrentMonth && typeof statusMessage === "object" && (
@@ -402,7 +451,7 @@ export default function ArchivePage() {
                                 boxShadow: canUnlock ? "0 0 10px rgba(253,230,138,0.5), 0 0 20px rgba(253,230,138,0.25)" : undefined,
                               }}
                             >
-                              {isUnlocked ? "열어보기" : `${LU_ICON} 600 해금하기`}
+                              {isUnlocked ? "열어보기" : `${LU_ICON} ${LU_ARCHIVE_BOOK_UNLOCK} 해금`}
                             </span>
                           )}
                         </div>

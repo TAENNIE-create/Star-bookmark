@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
-import { LuBalanceBar } from "../components/arisum/lu-balance-bar";
 import { CosmicLayoutWrapper } from "../components/arisum/cosmic-layout-wrapper";
 import { SupabaseStorageProvider } from "../components/arisum/supabase-storage-provider";
+import { StoreModalProvider } from "../components/arisum/store-modal-provider";
 
 /** 기본 본문용: 에이투지체 Light */
 const a2zLight = localFont({
@@ -47,8 +47,9 @@ export default function RootLayout({
     <html lang="ko" className={`${a2zLight.variable} ${a2zRegular.variable} ${a2zMedium.variable} ${nanumSquareRoundB.variable}`}>
       <body className={`${a2zLight.className} antialiased pt-10`}>
         <SupabaseStorageProvider>
-          <LuBalanceBar />
-          <CosmicLayoutWrapper>{children}</CosmicLayoutWrapper>
+          <CosmicLayoutWrapper>
+            <StoreModalProvider>{children}</StoreModalProvider>
+          </CosmicLayoutWrapper>
         </SupabaseStorageProvider>
       </body>
     </html>

@@ -505,7 +505,7 @@ function SectionConstellation({ lu }: { lu: number }) {
           <p className="text-[11px] text-[#64748B] uppercase tracking-wider mb-4">The Constellation</p>
 
           {/* 별조각 수집 */}
-          <div className="flex items-center justify-between mb-4 p-3 rounded-2xl bg-[#111827] border border-[#1a1f2e]">
+          <div className="flex items-center justify-between mb-4 px-4 py-3 rounded-2xl bg-[#111827] border border-[#1a1f2e]">
             <div className="flex items-center gap-2">
               <span className="text-xl text-amber-200">{LU_ICON}</span>
               <span className="text-sm font-semibold text-[#E2E8F0]">별조각 수집</span>
@@ -604,7 +604,7 @@ function SectionConstellation({ lu }: { lu: number }) {
                   key={c.id}
                   type="button"
                   onClick={() => setSelected(c)}
-                  className="w-full text-left p-3 rounded-xl bg-[#111827] border border-[#1a1f2e] hover:border-[#64748B]/50 transition-colors"
+                  className="w-full text-left px-4 py-3 rounded-xl bg-[#111827] border border-[#1a1f2e] hover:border-[#64748B]/50 transition-colors"
                   whileTap={{ scale: 0.98 }}
                 >
                   <span className="text-sm font-medium text-[#E2E8F0]">✦ {c.name}</span>

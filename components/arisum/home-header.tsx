@@ -12,6 +12,7 @@ import {
 } from "../../lib/home-greeting";
 import { LU_BALANCE_UPDATED_EVENT, getLuBalance } from "../../lib/lu-balance";
 import { createClient } from "../../lib/supabase/client";
+import { openStoreModal } from "./store-modal-provider";
 
 const CORAL_GLOW = "rgba(255, 107, 107, 0.5)";
 
@@ -86,8 +87,10 @@ export function HomeHeader() {
           </p>
         </div>
         <div className="shrink-0 flex items-center gap-2">
-          <div
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl transition-all duration-200 active:translate-y-0.5 active:shadow-sm"
+          <button
+            type="button"
+            onClick={openStoreModal}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl transition-all duration-200 active:translate-y-0.5 active:shadow-sm cursor-pointer"
             style={{
               backgroundColor: "rgba(15, 23, 42, 0.08)",
               color: MIDNIGHT_BLUE,
@@ -95,10 +98,11 @@ export function HomeHeader() {
                 "0 2px 0 rgba(0,0,0,0.06), 0 4px 8px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.5)",
               border: "1px solid rgba(255,255,255,0.6)",
             }}
+            aria-label="별조각 · 상점 열기"
           >
             <span className="text-amber-600 text-sm" aria-hidden>{LU_ICON}</span>
             <span className="text-sm font-bold tabular-nums">{lu}</span>
-          </div>
+          </button>
           <div className="relative flex flex-col items-end">
             <motion.div
               className="rounded-2xl flex items-center justify-center ring-2 ring-[#FF6B6B]/80 animate-pulse"

@@ -27,14 +27,31 @@ html {
   --font-display: var(--font-a2z-m), ui-sans-serif, system-ui, sans-serif;
 }
 
-/* 기본 본문: 에이투지체 Regular */
+/* 한국어 최적화 줄바꿈: 단어 단위, 한 글자만 떨어지는 현상 방지 */
+body,
+p,
+span,
+li,
+label {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+/* 기본 본문: 에이투지체 Regular, 고급 앱 가독성(넉넉한 행간·자간) */
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-a2z-r), ui-sans-serif, system-ui, sans-serif !important;
   font-weight: 400;
-  letter-spacing: 0.025em;
-  line-height: 1.625;
+  letter-spacing: 0.03em;
+  line-height: 1.7;
+}
+
+/* 왼쪽 정렬되어 있던 본문·문단만 양쪽 정렬 (가운데/버튼/제목은 그대로) */
+p:not([class*="text-center"]):not([class*="text-right"]),
+li {
+  text-align: justify;
+  text-align-last: left;
 }
 
 /* 제목·강조: 에이투지체 Medium */
@@ -56,10 +73,13 @@ strong, b, .font-medium, .font-semibold, .font-bold {
   line-height: 1.625;
 }
 
+/* 일기 본문·별지기 코멘트: 고급 앱 가독성(넉넉한 행간·자간) + 양쪽 정렬 */
 .arisum-diary-content {
   font-family: var(--font-a2z-r), sans-serif;
-  letter-spacing: 0.025em;
-  line-height: 1.75;
+  letter-spacing: 0.03em;
+  line-height: 1.8;
+  text-align: justify;
+  text-align-last: left;
 }
 
 .font-a2z-m {
@@ -73,6 +93,55 @@ strong, b, .font-medium, .font-semibold, .font-bold {
   font-family: var(--font-a2z-regular), sans-serif;
   font-weight: 400;
   letter-spacing: 0.025em;
+}
+
+/* 기록 모드 카드: 포인트 컬러 가변 그림자(shadow-xl 기반) + 누를 때 컬러 번짐 */
+.arisum-mode-card-blue {
+  box-shadow:
+    0 20px 25px -5px rgba(59, 130, 246, 0.1),
+    0 8px 10px -6px rgba(59, 130, 246, 0.06);
+  transition: box-shadow 0.25s ease, transform 0.2s ease;
+}
+.arisum-mode-card-blue:active {
+  box-shadow:
+    0 28px 55px -12px rgba(59, 130, 246, 0.28),
+    0 14px 24px -8px rgba(59, 130, 246, 0.18);
+}
+
+.arisum-mode-card-green {
+  box-shadow:
+    0 20px 25px -5px rgba(16, 185, 129, 0.1),
+    0 8px 10px -6px rgba(16, 185, 129, 0.06);
+  transition: box-shadow 0.25s ease, transform 0.2s ease;
+}
+.arisum-mode-card-green:active {
+  box-shadow:
+    0 28px 55px -12px rgba(16, 185, 129, 0.28),
+    0 14px 24px -8px rgba(16, 185, 129, 0.18);
+}
+
+.arisum-mode-card-amber {
+  box-shadow:
+    0 20px 25px -5px rgba(245, 158, 11, 0.1),
+    0 8px 10px -6px rgba(245, 158, 11, 0.06);
+  transition: box-shadow 0.25s ease, transform 0.2s ease;
+}
+.arisum-mode-card-amber:active {
+  box-shadow:
+    0 28px 55px -12px rgba(245, 158, 11, 0.28),
+    0 14px 24px -8px rgba(245, 158, 11, 0.18);
+}
+
+.arisum-mode-card-purple {
+  box-shadow:
+    0 20px 25px -5px rgba(139, 92, 246, 0.1),
+    0 8px 10px -6px rgba(139, 92, 246, 0.06);
+  transition: box-shadow 0.25s ease, transform 0.2s ease;
+}
+.arisum-mode-card-purple:active {
+  box-shadow:
+    0 28px 55px -12px rgba(139, 92, 246, 0.28),
+    0 14px 24px -8px rgba(139, 92, 246, 0.18);
 }
 
 /* 퀘스트 리스트 텍스트: 단어 단위 줄바꿈, 가독성 */
@@ -121,6 +190,8 @@ strong, b, .font-medium, .font-semibold, .font-bold {
   word-break: keep-all;
   overflow-wrap: break-word;
   font-size: 0.95rem;
+  text-align: justify;
+  text-align-last: left;
 }
 
 /* 별의 갈피 전역 배경 */

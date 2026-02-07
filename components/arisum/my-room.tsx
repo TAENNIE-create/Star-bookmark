@@ -249,7 +249,7 @@ export function MyRoom({ keywords: _keywordsProp }: MyRoomProps) {
                   }}
                 />
                 <motion.span
-                  className="absolute whitespace-nowrap text-[9px] font-normal text-amber-200/90 -translate-x-1/2 -translate-y-full -top-1 left-1/2"
+                  className="absolute max-w-[72px] text-[9px] font-normal text-amber-200/90 -translate-x-1/2 -translate-y-full -top-1 left-1/2 text-center break-words"
                   style={{ fontFamily: "var(--font-a2z-r), sans-serif" }}
                   animate={{ rotate: -360 }}
                   transition={{

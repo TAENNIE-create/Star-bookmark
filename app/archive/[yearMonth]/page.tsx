@@ -9,6 +9,7 @@ import { MOOD_SCORE_KEYS } from "../../../lib/arisum-types";
 import { getUserName } from "../../../lib/home-greeting";
 import { getUnlockedMonths } from "../../../lib/archive-unlock";
 import { getAppStorage } from "../../../lib/app-storage";
+import { LoadingOverlay } from "../../../components/arisum/loading-overlay";
 
 const REPORT_BY_DATE_KEY = "arisum-report-by-date";
 const JOURNALS_KEY = "arisum-journals";
@@ -23,12 +24,12 @@ const ANTIQUE_GOLD = "#b8860b";
 const ANTIQUE_GOLD_DARK = "#8B6914";
 
 const SPECTRUM_CONFIG: { key: keyof MoodScores; label: string; low: string; high: string }[] = [
-  { key: "resilience", label: "감정회복", low: "침잠", high: "복원" },
-  { key: "selfAwareness", label: "사고방식", low: "본질", high: "실천" },
-  { key: "empathy", label: "관계맺기", low: "독립", high: "연결" },
-  { key: "meaningOrientation", label: "가치기준", low: "논리", high: "감정" },
-  { key: "openness", label: "도전정신", low: "안정", high: "모험" },
-  { key: "selfAcceptance", label: "자아수용", low: "채찍", high: "포용" },
+  { key: "resilience", label: "감정회복", low: "가라앉음", high: "다시 일어남" },
+  { key: "selfAwareness", label: "사고방식", low: "생각", high: "행동" },
+  { key: "empathy", label: "관계맺기", low: "혼자", high: "함께" },
+  { key: "meaningOrientation", label: "가치기준", low: "이성", high: "감정" },
+  { key: "openness", label: "도전정신", low: "익숙함", high: "새로움" },
+  { key: "selfAcceptance", label: "자아수용", low: "자책", high: "이해" },
   { key: "selfDirection", label: "삶의동력", low: "통제", high: "순응" },
 ];
 
@@ -46,6 +47,8 @@ type MonthlyReport = {
   monthlyTitle: string;
   prologue: string;
   terrainComment: string;
+  /** 별지기의 해석 노트: 지표 간 모순/병행 포착 */
+  interpretationNote?: string;
   modeAnalysis: MindMap;
   metricShift: Partial<MoodScores>;
   goldenSentences: { sentence: string; empathyComment: string }[];
@@ -98,11 +101,6 @@ function setStoredMonthlyReport(yearMonth: string, report: MonthlyReport) {
   getAppStorage().setItem(`${MONTHLY_REPORT_KEY}-${yearMonth}`, JSON.stringify(report));
 }
 
-function clearStoredMonthlyReport(yearMonth: string) {
-  if (typeof window === "undefined") return;
-  getAppStorage().removeItem(`${MONTHLY_REPORT_KEY}-${yearMonth}`);
-}
-
 /** 수평 궤적: 연한 골드 축, 속빈 별(시작) / 황금 별(끝), 진한 골드 연결선 */
 function TrajectoryBar({
   low,
@@ -124,7 +122,7 @@ function TrajectoryBar({
   const isRight = endVal >= startVal;
   return (
     <div className="flex flex-col gap-1">
-      <div className="flex justify-between text-[16px]" style={{ color: CHAMPAGNE_GOLD, opacity: 0.95 }}>
+      <div className="flex justify-between text-[14px]" style={{ color: "#ffffff" }}>
         <span>{low}</span>
         <span>{high}</span>
       </div>
@@ -309,15 +307,6 @@ export default function MonthlyReportPage() {
       .finally(() => setLoading(false));
   }, [yearMonth, router, refetchTrigger]);
 
-  const handleReanalyze = () => {
-    if (!yearMonth) return;
-    clearStoredMonthlyReport(yearMonth);
-    setReport(null);
-    setError(null);
-    setLoading(true);
-    setRefetchTrigger((t) => t + 1);
-  };
-
   function migrateReport(cached: MonthlyReport): MonthlyReport {
     const old = cached as { socialSelfSeed?: string; terrainComment?: string; modeAnalysis?: { dominantMode?: string } };
     const mm = cached.modeAnalysis ?? ({} as MindMap);
@@ -345,12 +334,7 @@ export default function MonthlyReportPage() {
   const monthLabel = y && m ? `${y}년 ${parseInt(m, 10)}월` : "";
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center arisum-vintage-page" style={{ backgroundColor: MIDNIGHT_BLUE }}>
-        <div className="h-8 w-8 rounded-full border-2 animate-spin" style={{ borderColor: `${SILVER_WHITE}40`, borderTopColor: "transparent" }} />
-        <p className="mt-4 text-sm" style={{ color: SILVER_WHITE }}>한 달을 읽는 중...</p>
-      </div>
-    );
+    return <LoadingOverlay message="monthly-report" />;
   }
 
   if (error || !report) {
@@ -434,6 +418,32 @@ export default function MonthlyReportPage() {
           </div>
         </Section>
 
+        {/* 별지기의 해석 노트 - 차트와 마음의 지도 사이 브릿지, 포스트잇/연구 노트 느낌 */}
+        {report.interpretationNote && (
+          <Section className="mb-16">
+            <h2 className="arisum-section-title text-lg mb-4">별지기의 해석 노트</h2>
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+              className="rounded-2xl p-5 relative overflow-hidden"
+              style={{
+                backgroundColor: "rgba(254,252,232,0.92)",
+                border: "1px solid rgba(253,230,138,0.6)",
+                boxShadow: "0 2px 12px rgba(15,23,42,0.08), 0 0 0 1px rgba(253,230,138,0.25)",
+              }}
+            >
+              <div className="absolute top-0 right-0 w-16 h-16 pointer-events-none opacity-30" style={{ background: "radial-gradient(circle at top right, rgba(253,230,138,0.4) 0%, transparent 70%)" }} aria-hidden />
+              <p
+                className="text-sm font-a2z-r leading-relaxed whitespace-pre-line relative z-10"
+                style={{ color: MIDNIGHT_BLUE, lineHeight: 1.85 }}
+              >
+                {report.interpretationNote}
+              </p>
+            </motion.div>
+          </Section>
+        )}
+
         {/* 마음의 지도 - 얇은 골드 테두리 반투명 네이비 카드 */}
         <Section className="mb-16">
           <h2 className="arisum-section-title text-lg mb-6">마음의 지도</h2>
@@ -512,14 +522,6 @@ export default function MonthlyReportPage() {
           </div>
         </Section>
 
-        <button
-          type="button"
-          onClick={handleReanalyze}
-          className="w-full py-3 rounded-2xl text-sm font-medium mb-3"
-          style={{ borderColor: "rgba(253,230,138,0.5)", color: CHAMPAGNE_GOLD, backgroundColor: "transparent", borderWidth: 1 }}
-        >
-          다시 분석하기
-        </button>
         <button
           type="button"
           onClick={() => router.push("/archive")}

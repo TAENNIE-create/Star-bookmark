@@ -7,15 +7,30 @@ import { TabBar, type TabKey } from "../../components/arisum/tab-bar";
 import type { MoodScores } from "../../lib/arisum-types";
 import { MIDNIGHT_BLUE, MUTED, CARD_BG, LU_ICON } from "../../lib/theme";
 import { getLuBalance, subtractLu, addLu, LU_DAILY_REPORT_UNLOCK, LU_REANALYZE } from "../../lib/lu-balance";
+import { getMembershipTier, MEMBERSHIP_ACCESS_DAYS, isDateAccessible, getRequiredShards } from "../../lib/economy";
+import { getUnlockedMonths } from "../../lib/archive-unlock";
 import { getUserName } from "../../lib/home-greeting";
 import { getQuestsForDate, setQuestsForDate } from "../../lib/quest-storage";
 import { getCurrentConstellation, mergeAtlasWithNewStar, setCurrentConstellation, setActiveConstellations } from "../../lib/atlas-storage";
 import { getAppStorage } from "../../lib/app-storage";
+import { LoadingOverlay } from "../../components/arisum/loading-overlay";
+import { openStoreModal } from "../../components/arisum/store-modal-provider";
+import { getTraitLevel, TRAIT_LEVEL_MESSAGES, TRAIT_LEVEL_NAMES, type TraitLevel } from "../../lib/trait-level";
 
 const REPORT_BY_DATE_KEY = "arisum-report-by-date";
 const DAILY_QUESTS_DONE_KEY = "arisum-daily-quests-done";
 const MAX_DAILY_QUESTS = 3;
 const CHAMPAGNE_GOLD = "#FDE68A";
+const SILVER_WHITE = "#E2E8F0";
+const POPUP_BG = "#0A0E1A";
+
+/** AI 생성 문구 내 [닉네임]/[사용자 이름]을 실제 이름으로 치환 */
+function replaceUserNameInText(text: string, userName: string): string {
+  const name = userName?.trim() || "당신";
+  return text
+    .replace(/\[닉네임\]/gi, name)
+    .replace(/\[사용자 이름\]/gi, name);
+}
 
 type JournalByDate = Record<string, { content: string; createdAt: string; aiQuestion?: string }[]>;
 
@@ -53,6 +68,8 @@ type ReportEntry = {
   growthSeeds: string[];
   keywords?: [string, string, string];
   lastAnalyzedText?: string;
+  /** 이 날짜 분석 시 traitCounts에 반영된 trait id 목록 (삭제 시 회수용) */
+  traitIdsContributed?: string[];
 };
 
 function getReportByDate(): Record<string, ReportEntry> {
@@ -95,10 +112,15 @@ function getLast7DayKeys(): string[] {
   return keys;
 }
 
-/** 밤하늘(7일 별자리)용: 최근 7일 일기 맥락 */
-function getRecentJournalContents(journalsData: JournalByDate): Record<string, string> {
+/** 밤하늘(7일 별자리)용: 최근 7일 일기 맥락. filterByAccess: true면 열람 권한 있는 날만 포함 */
+function getRecentJournalContents(
+  journalsData: JournalByDate,
+  filterByAccess?: { accessDays: number | null; unlockedMonths: Set<string> }
+): Record<string, string> {
   const out: Record<string, string> = {};
   for (const dateKey of getLast7DayKeys()) {
+    if (filterByAccess && !isDateAccessible(dateKey, filterByAccess.accessDays, filterByAccess.unlockedMonths))
+      continue;
     const text = getCombinedJournalText(dateKey, journalsData);
     if (text.trim()) out[dateKey] = text;
   }
@@ -175,6 +197,7 @@ function DiaryCalendarContent() {
   const [todayQuestsDone, setTodayQuestsDone] = useState(false);
   const [showReanalyzeModal, setShowReanalyzeModal] = useState(false);
   const [showUnlockConfirm, setShowUnlockConfirm] = useState<string | null>(null);
+  const [sealedDateKey, setSealedDateKey] = useState<string | null>(null);
   const [lu, setLu] = useState(0);
   const [isReanalyzing, setIsReanalyzing] = useState(false);
   const [traitConfirmPopup, setTraitConfirmPopup] = useState<{
@@ -182,6 +205,11 @@ function DiaryCalendarContent() {
     opening: string;
     body: string;
     closing: string;
+  } | null>(null);
+  const [levelUpPopup, setLevelUpPopup] = useState<{
+    label: string;
+    newLevel: TraitLevel;
+    message: string;
   } | null>(null);
   const hasAutoSelectedToday = useRef(false);
 
@@ -311,22 +339,23 @@ function DiaryCalendarContent() {
     });
   };
 
-  /** 30루 차감 후 해당 날짜에 대해 analyze API 호출 및 결과 저장 */
+  /** 별조각 차감 후 해당 날짜에 대해 analyze API 호출 및 결과 저장 (멤버십 할인 적용) */
   const runUnlockAnalyze = async (dateKey: string) => {
+    const cost = getRequiredShards(tier, "daily_analysis");
     const lu = getLuBalance();
-    if (lu < LU_DAILY_REPORT_UNLOCK) {
+    if (lu < cost) {
       if (typeof window !== "undefined") {
         window.alert("별조각이 부족하여 기록을 읽을 수 없습니다");
       }
       return;
     }
-    if (!subtractLu(LU_DAILY_REPORT_UNLOCK)) return;
+    if (!subtractLu(cost)) return;
     window.dispatchEvent(new Event("lu-balance-updated"));
 
     const data = journals;
     const entries = data[dateKey] ?? [];
     if (entries.length === 0) {
-      addLu(LU_DAILY_REPORT_UNLOCK);
+      addLu(cost);
       return;
     }
 
@@ -337,12 +366,24 @@ function DiaryCalendarContent() {
     try {
       const user_identity_summary =
         typeof window !== "undefined" ? getAppStorage().getItem("user_identity_summary") : null;
+      let previousArchive: { traitCounts?: Record<string, number>; confirmedTraits?: Array<{ traitId: string; label: string }> } = {};
+      try {
+        if (user_identity_summary) {
+          const p = JSON.parse(user_identity_summary) as { traitCounts?: Record<string, number>; confirmedTraits?: Array<{ traitId: string; label: string }> };
+          previousArchive = { traitCounts: p.traitCounts ?? {}, confirmedTraits: p.confirmedTraits ?? [] };
+        }
+      } catch {
+        /* ignore */
+      }
       const existingByDateForAtlas = getReportByDate();
-      const existingStarDates = Object.keys(existingByDateForAtlas).filter(
+      const allStarDates = Object.keys(existingByDateForAtlas).filter(
         (d) =>
           existingByDateForAtlas[d]?.todayFlow ||
           existingByDateForAtlas[d]?.gardenerWord ||
           (existingByDateForAtlas[d]?.growthSeeds?.length ?? 0) > 0
+      );
+      const existingStarDates = allStarDates.filter((d) =>
+        isDateAccessible(d, accessDays, unlockedMonths)
       );
 
       const analyzeRes = await fetch("/api/analyze", {
@@ -353,14 +394,14 @@ function DiaryCalendarContent() {
           date: dateKey,
           user_identity_summary: user_identity_summary || undefined,
           existing_report: existing_report || undefined,
-          recentJournalContents: getRecentJournalContents(data),
+          recentJournalContents: getRecentJournalContents(data, { accessDays, unlockedMonths }),
           existingStarDates,
           previousConstellationName: getCurrentConstellation()?.name ?? undefined,
         }),
       });
 
       if (!analyzeRes.ok) {
-        addLu(LU_DAILY_REPORT_UNLOCK);
+        addLu(cost);
         throw new Error("분석 실패");
       }
 
@@ -400,6 +441,10 @@ function DiaryCalendarContent() {
             growthSeeds,
             lastAnalyzedText: combinedText,
             ...(keywords && { keywords }),
+            ...(Array.isArray((analyzeData as { traitIdsIncrementedForThisDate?: string[] }).traitIdsIncrementedForThisDate) &&
+              (analyzeData as { traitIdsIncrementedForThisDate: string[] }).traitIdsIncrementedForThisDate.length > 0 && {
+                traitIdsContributed: (analyzeData as { traitIdsIncrementedForThisDate: string[] }).traitIdsIncrementedForThisDate,
+              }),
           });
           if (dateKey === getTodayKey() && growthSeeds.length > 0) {
             const tomorrowKey = getTomorrowKey();
@@ -436,6 +481,25 @@ function DiaryCalendarContent() {
               closing: analyzeData.newlyConfirmedTrait.closing,
             });
           }
+          const newArchive = analyzeData.identityArchive;
+          if (newArchive && typeof newArchive === "object" && Array.isArray(newArchive.confirmedTraits)) {
+            const newCounts = (newArchive as { traitCounts?: Record<string, number> }).traitCounts ?? {};
+            const oldCounts = previousArchive.traitCounts ?? {};
+            for (const t of newArchive.confirmedTraits as Array<{ traitId: string; label: string }>) {
+              const oldC = oldCounts[t.traitId] ?? 0;
+              const newC = newCounts[t.traitId] ?? 0;
+              const oldL = getTraitLevel(oldC);
+              const newL = getTraitLevel(newC);
+              if (newL > oldL && newL >= 2) {
+                setLevelUpPopup({
+                  label: t.label,
+                  newLevel: newL as TraitLevel,
+                  message: TRAIT_LEVEL_MESSAGES[newL as TraitLevel],
+                });
+                break;
+              }
+            }
+          }
         } catch {
           // ignore
         }
@@ -457,11 +521,12 @@ function DiaryCalendarContent() {
 
   const handleReanalyze = async () => {
     if (!selectedDate || isReanalyzing) return;
+    const reCost = getRequiredShards(tier, "re_analysis");
     const lu = getLuBalance();
-    if (lu < LU_REANALYZE) {
+    if (lu < reCost) {
       return; // "별조각이 부족해요" - modal에서 처리
     }
-    if (!subtractLu(LU_REANALYZE)) return;
+    if (!subtractLu(reCost)) return;
     setShowReanalyzeModal(false);
     setIsReanalyzing(true);
     try {
@@ -470,18 +535,30 @@ function DiaryCalendarContent() {
         .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
       const journalTexts = entries.map((e) => e.content.trim()).filter(Boolean);
       if (journalTexts.length === 0) {
-        addLu(LU_REANALYZE); // 환불
+        addLu(reCost); // 환불
         return;
       }
       const user_identity_summary =
         typeof window !== "undefined" ? getAppStorage().getItem("user_identity_summary") : null;
+      let previousArchiveRe: { traitCounts?: Record<string, number>; confirmedTraits?: Array<{ traitId: string; label: string }> } = {};
+      try {
+        if (user_identity_summary) {
+          const p = JSON.parse(user_identity_summary) as { traitCounts?: Record<string, number>; confirmedTraits?: Array<{ traitId: string; label: string }> };
+          previousArchiveRe = { traitCounts: p.traitCounts ?? {}, confirmedTraits: p.confirmedTraits ?? [] };
+        }
+      } catch {
+        /* ignore */
+      }
       const existing = getReportByDate()[selectedDate];
       const existingByDateRe = getReportByDate();
-      const existingStarDatesRe = Object.keys(existingByDateRe).filter(
+      const allStarDatesRe = Object.keys(existingByDateRe).filter(
         (d) =>
           existingByDateRe[d]?.todayFlow ||
           existingByDateRe[d]?.gardenerWord ||
           (existingByDateRe[d]?.growthSeeds?.length ?? 0) > 0
+      );
+      const existingStarDatesRe = allStarDatesRe.filter((d) =>
+        isDateAccessible(d, accessDays, unlockedMonths)
       );
       const res = await fetch("/api/analyze", {
         method: "POST",
@@ -497,7 +574,7 @@ function DiaryCalendarContent() {
                 growthSeeds: existing.growthSeeds,
               }
             : undefined,
-          recentJournalContents: getRecentJournalContents(journals),
+          recentJournalContents: getRecentJournalContents(journals, { accessDays, unlockedMonths }),
           existingStarDates: existingStarDatesRe,
           previousConstellationName: getCurrentConstellation()?.name ?? undefined,
         }),
@@ -525,6 +602,10 @@ function DiaryCalendarContent() {
         growthSeeds,
         lastAnalyzedText: combinedText,
         ...(keywords && { keywords }),
+        ...(Array.isArray((analyzeData as { traitIdsIncrementedForThisDate?: string[] }).traitIdsIncrementedForThisDate) &&
+          (analyzeData as { traitIdsIncrementedForThisDate: string[] }).traitIdsIncrementedForThisDate.length > 0 && {
+            traitIdsContributed: (analyzeData as { traitIdsIncrementedForThisDate: string[] }).traitIdsIncrementedForThisDate,
+          }),
       });
       if (typeof window !== "undefined") {
         try {
@@ -573,6 +654,25 @@ function DiaryCalendarContent() {
               closing: analyzeData.newlyConfirmedTrait.closing,
             });
           }
+          const newArchiveRe = analyzeData.identityArchive;
+          if (newArchiveRe && typeof newArchiveRe === "object" && Array.isArray(newArchiveRe.confirmedTraits)) {
+            const newCountsRe = (newArchiveRe as { traitCounts?: Record<string, number> }).traitCounts ?? {};
+            const oldCountsRe = previousArchiveRe.traitCounts ?? {};
+            for (const t of newArchiveRe.confirmedTraits as Array<{ traitId: string; label: string }>) {
+              const oldC = oldCountsRe[t.traitId] ?? 0;
+              const newC = newCountsRe[t.traitId] ?? 0;
+              const oldL = getTraitLevel(oldC);
+              const newL = getTraitLevel(newC);
+              if (newL > oldL && newL >= 2) {
+                setLevelUpPopup({
+                  label: t.label,
+                  newLevel: newL as TraitLevel,
+                  message: TRAIT_LEVEL_MESSAGES[newL as TraitLevel],
+                });
+                break;
+              }
+            }
+          }
         } catch {
           /* ignore */
         }
@@ -586,21 +686,29 @@ function DiaryCalendarContent() {
       window.dispatchEvent(new Event("report-updated"));
       window.dispatchEvent(new Event("journal-updated"));
     } catch {
-      addLu(LU_REANALYZE); // 실패 시 환불
+      addLu(reCost); // 실패 시 환불
     } finally {
       setIsReanalyzing(false);
     }
   };
 
+  const tier = getMembershipTier();
+  const accessDays = MEMBERSHIP_ACCESS_DAYS[tier];
+  const unlockedMonths = getUnlockedMonths();
+
+  /** 첫 클릭: 날짜 선택 + 하단 리포트 표시. 봉인된 날짜 클릭 시 해금 유도 팝업 */
   const handleDateClick = (date: Date) => {
     const dateKey = formatDateKey(date);
+    if (!isDateAccessible(dateKey, accessDays, unlockedMonths)) {
+      setSealedDateKey(dateKey);
+      return;
+    }
+    if (selectedDate === dateKey) {
+      router.push(`/diary/${dateKey}`);
+      return;
+    }
     setSelectedDate(dateKey);
     loadReportData(dateKey);
-  };
-
-  const handleDateDoubleClick = (date: Date) => {
-    const dateKey = formatDateKey(date);
-    router.push(`/diary/${dateKey}`);
   };
 
   const getDaysInMonth = (year: number, month: number) => {
@@ -677,6 +785,9 @@ function DiaryCalendarContent() {
 
   return (
     <div className="min-h-screen flex justify-center bg-transparent">
+      {(isLoadingReport || isReanalyzing) && (
+        <LoadingOverlay message="diary-analysis" />
+      )}
       <div className="w-full max-w-md min-h-screen relative flex flex-col bg-transparent">
         <div className="h-6" />
 
@@ -716,7 +827,7 @@ function DiaryCalendarContent() {
 
         <main className="flex-1 px-6 pt-0 pb-24 overflow-hidden">
           <motion.div
-            className="rounded-3xl bg-white border border-[#E2E8F0] shadow-sm px-4 py-3 cursor-grab active:cursor-grabbing"
+            className="rounded-3xl bg-white border border-[#E2E8F0] shadow-sm px-4 py-6 cursor-grab active:cursor-grabbing"
             drag="x"
             dragConstraints={{ left: 0, right: 0 }}
             dragElastic={0.3}
@@ -740,7 +851,7 @@ function DiaryCalendarContent() {
             }}
           >
             {/* Week day headers */}
-            <div className="grid grid-cols-7 gap-1 mb-2 min-h-[2.2rem]">
+            <div className="grid grid-cols-7 gap-x-1 gap-y-4 mb-1 min-h-[2.2rem]">
               {weekDays.map((day) => (
                 <div
                   key={day}
@@ -752,37 +863,41 @@ function DiaryCalendarContent() {
               ))}
             </div>
 
-            {/* Calendar days (셀 세로 10% 확대) */}
-            <div className="grid grid-cols-7 gap-1">
+            {/* Calendar days: 행 간격 확대, 셀 세로 비율·터치 영역·점 간격 조정 */}
+            <div className="grid grid-cols-7 gap-x-1 gap-y-4">
               {days.map((date, index) => {
                 if (!date) {
-                  return <div key={`empty-${index}`} className="aspect-[1/1.1]" />;
+                  return <div key={`empty-${index}`} className="aspect-[1/1.2]" />;
                 }
 
                 const hasEntry = hasJournal(date);
                 const todayFlag = isToday(date);
-
                 const dateKey = formatDateKey(date);
                 const isSelected = selectedDate === dateKey;
+                const isSealed = !isDateAccessible(dateKey, accessDays, unlockedMonths);
 
                 return (
                   <motion.button
                     key={date.toISOString()}
                     onClick={() => handleDateClick(date)}
-                    onDoubleClick={() => handleDateDoubleClick(date)}
-                    className={`aspect-[1/1.1] rounded-xl flex flex-col items-center justify-center relative transition-all hover:scale-105 ${
-                      isSelected
-                        ? "bg-[#64748B] text-white font-semibold ring-2 ring-[#0F172A]"
+                    className={`aspect-[1/1.2] rounded-2xl flex flex-col items-center justify-center relative transition-all hover:scale-105 ${
+                      isSealed
+                        ? "bg-[#E2E8F0]/30 text-[#94A3B8] cursor-pointer"
+                        : isSelected && todayFlag
+                        ? "bg-[#0F172A] text-white font-semibold ring-2 ring-[#FDE68A] ring-offset-2"
+                        : isSelected
+                        ? "bg-[#0F172A]/15 text-[#0F172A] font-semibold ring-2 ring-[#0F172A] ring-offset-2"
                         : todayFlag
                         ? "bg-[#0F172A] text-white font-semibold"
                         : "bg-[#E2E8F0]/50 text-[#0F172A] hover:bg-[#E2E8F0]"
                     }`}
+                    style={isSealed ? { filter: "blur(1.5px)", opacity: 0.75 } : undefined}
                     whileTap={{ scale: 0.95 }}
                     onPointerDown={(e) => e.stopPropagation()}
                   >
-                    <span className="text-sm font-a2z-regular">{date.getDate()}</span>
-                    {hasEntry && (
-                      <div className="absolute bottom-1 w-1.5 h-1.5 rounded-full bg-[#0F172A]" />
+                    <span className="text-sm font-a2z-regular mb-1">{date.getDate()}</span>
+                    {hasEntry && !isSealed && (
+                      <div className="absolute bottom-1.5 w-1.5 h-1.5 rounded-full bg-[#0F172A]" />
                     )}
                   </motion.button>
                 );
@@ -816,17 +931,17 @@ function DiaryCalendarContent() {
                       const nickname = getUserName() || "당신";
                       return (
                         <div className="py-6 px-4 text-center space-y-5">
-                          <p className="text-sm leading-relaxed" style={{ color: MIDNIGHT_BLUE }}>
+                          <p className="text-sm leading-relaxed text-center w-full" style={{ color: MIDNIGHT_BLUE }}>
                             별지기가 {nickname}님의 일기를 분석했어요.
                           </p>
                           <div className="flex flex-col items-center gap-3">
                             <button
                               type="button"
-                              onClick={() => selectedDate && (lu >= LU_DAILY_REPORT_UNLOCK ? setShowUnlockConfirm(selectedDate) : null)}
-                              disabled={lu < LU_DAILY_REPORT_UNLOCK || isLoadingReport}
+                              onClick={() => selectedDate && (lu >= costDaily ? setShowUnlockConfirm(selectedDate) : null)}
+                              disabled={lu < costDaily || isLoadingReport}
                               className="rounded-2xl px-6 py-4 text-base font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                               style={
-                                lu >= LU_DAILY_REPORT_UNLOCK
+                                lu >= costDaily
                                   ? {
                                       backgroundColor: CHAMPAGNE_GOLD,
                                       color: MIDNIGHT_BLUE,
@@ -835,13 +950,13 @@ function DiaryCalendarContent() {
                                   : { backgroundColor: "#94A3B8", color: "#FFFFFF" }
                               }
                             >
-                              {LU_ICON} 30 해금하기
+                              {LU_ICON} {costDaily} 해금하기
                             </button>
                             <p className="text-xs" style={{ color: MUTED }}>
                               보유 별조각 · <span className="font-semibold tabular-nums" style={{ color: MIDNIGHT_BLUE }}>{LU_ICON} {lu}</span>
                             </p>
                           </div>
-                          {lu < LU_DAILY_REPORT_UNLOCK && (
+                          {lu < costDaily && (
                             <p className="text-xs" style={{ color: "#94A3B8" }}>
                               별조각이 부족하면 기록을 읽을 수 없어요.
                             </p>
@@ -994,12 +1109,12 @@ function DiaryCalendarContent() {
                     );
                   })()
                 ) : (
-                  <div className="text-center py-6">
-                    <p className="text-sm leading-relaxed" style={{ color: MUTED }}>
+                  <div className="flex flex-col items-center justify-center py-6 w-full">
+                    <p className="text-sm leading-relaxed text-center" style={{ color: MUTED }}>
                       이날은 아직 기록이 없어요.
                       <br />
                       <span className="text-xs">
-                        더블 클릭하여 마음을 심어보세요.
+                        일기를 쓰고 별지기의 분석을 받아보세요.
                       </span>
                     </p>
                   </div>
@@ -1030,7 +1145,7 @@ function DiaryCalendarContent() {
                   정말로 해금하시겠습니까?
                 </p>
                 <p className="text-xs text-center mb-4" style={{ color: MUTED }}>
-                  별조각 30개가 사용돼요.
+                  별조각 {costDaily}개가 사용돼요.
                 </p>
                 <div className="flex gap-3 mt-4">
                   <button
@@ -1079,9 +1194,9 @@ function DiaryCalendarContent() {
                 className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl"
               >
                 <p className="text-sm leading-relaxed text-center mb-2" style={{ color: MIDNIGHT_BLUE }}>
-                  별조각 15개를 사용해 이 날의 기록을 밤하늘에 올리시겠어요?
+                  별조각 {costRe}개를 사용해 이 날의 기록을 밤하늘에 올리시겠어요?
                 </p>
-                {getLuBalance() < LU_REANALYZE && (
+                {getLuBalance() < costRe && (
                   <p className="text-xs text-amber-600 text-center mb-4">별조각이 부족해요</p>
                 )}
                 <div className="flex gap-3 mt-4">
@@ -1096,9 +1211,9 @@ function DiaryCalendarContent() {
                   <button
                     type="button"
                     onClick={handleReanalyze}
-                    disabled={getLuBalance() < LU_REANALYZE}
+                    disabled={getLuBalance() < costRe}
                     className="flex-1 rounded-xl py-2.5 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{ backgroundColor: getLuBalance() >= LU_REANALYZE ? "#0F172A" : "#94A3B8" }}
+                    style={{ backgroundColor: getLuBalance() >= costRe ? "#0F172A" : "#94A3B8" }}
                   >
                     동기화하기
                   </button>
@@ -1108,15 +1223,15 @@ function DiaryCalendarContent() {
           )}
         </AnimatePresence>
 
-        {/* 7회 확정 성격 축하 팝업 */}
+        {/* 시간의 봉인: 열람 기간 지난 날짜 클릭 시 해금 유도 */}
         <AnimatePresence>
-          {traitConfirmPopup && (
+          {sealedDateKey && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F172A]/60 backdrop-blur-sm px-4"
-              onClick={() => setTraitConfirmPopup(null)}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F172A]/50 backdrop-blur-sm px-4"
+              onClick={() => setSealedDateKey(null)}
             >
               <motion.div
                 initial={{ scale: 0.95, opacity: 0 }}
@@ -1125,26 +1240,190 @@ function DiaryCalendarContent() {
                 onClick={(e) => e.stopPropagation()}
                 className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl"
               >
-                <p className="text-xs font-medium uppercase tracking-wider mb-2" style={{ color: "#64748B" }}>
-                  별자리 완성
+                <p className="text-sm leading-relaxed text-center mb-2" style={{ color: MIDNIGHT_BLUE }}>
+                  이 날짜는 현재 멤버십으로 열람 기간이 지났어요.
                 </p>
-                <p className="text-lg font-semibold mb-3" style={{ color: MIDNIGHT_BLUE }}>
-                  {traitConfirmPopup.label}
+                <p className="text-xs text-center mb-4" style={{ color: MUTED }}>
+                  멤버십을 올리거나, 기록함에서 기억의 열쇠로 해당 달을 영구 해금할 수 있어요.
                 </p>
-                <p className="text-sm leading-relaxed mb-2" style={{ color: MIDNIGHT_BLUE }}>
-                  {traitConfirmPopup.opening}
+                <div className="flex gap-3 mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setSealedDateKey(null)}
+                    className="flex-1 rounded-xl py-2.5 text-sm font-medium border border-[#E2E8F0] transition-colors hover:bg-[#F8FAFC]"
+                    style={{ color: MIDNIGHT_BLUE }}
+                  >
+                    닫기
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { openStoreModal(); setSealedDateKey(null); }}
+                    className="flex-1 rounded-xl py-2.5 text-sm font-medium text-white transition-colors"
+                    style={{ backgroundColor: MIDNIGHT_BLUE }}
+                  >
+                    멤버십·상점
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* 7회 확정 성격 축하 팝업 — 고대비 프리미엄 */}
+        <AnimatePresence>
+          {traitConfirmPopup && (() => {
+            const userName = getUserName() || "당신";
+            const opening = replaceUserNameInText(traitConfirmPopup.opening, userName);
+            const body = replaceUserNameInText(traitConfirmPopup.body, userName);
+            const closing = replaceUserNameInText(traitConfirmPopup.closing, userName);
+            return (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-50 flex items-center justify-center px-4 backdrop-blur-lg"
+                style={{ backgroundColor: "rgba(5,8,16,0.92)" }}
+                onClick={() => setTraitConfirmPopup(null)}
+              >
+                <motion.div
+                  initial={{ scale: 0.95, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.95, opacity: 0 }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="relative w-full max-w-sm rounded-2xl p-6 overflow-hidden"
+                  style={{
+                    backgroundColor: POPUP_BG,
+                    border: "1px solid #FDE68A",
+                    boxShadow: "0 0 0 1px rgba(253,230,138,0.2), 0 25px 50px -12px rgba(0,0,0,0.6)",
+                  }}
+                >
+                  {/* 배경 별가루/반짝임 */}
+                  <div className="absolute inset-0 pointer-events-none opacity-30" aria-hidden>
+                    <svg className="absolute w-full h-full" viewBox="0 0 200 200" preserveAspectRatio="xMidYMid slice">
+                      {Array.from({ length: 24 }, (_, i) => (
+                        <circle
+                          key={i}
+                          cx={20 + (i * 17) % 160}
+                          cy={15 + (i * 13) % 170}
+                          r={0.8 + (i % 3) * 0.4}
+                          fill="#FDE68A"
+                          opacity={0.4 + (i % 4) * 0.15}
+                        />
+                      ))}
+                    </svg>
+                  </div>
+
+                  <p
+                    className="relative text-[11px] font-medium uppercase tracking-wider mb-3"
+                    style={{ fontFamily: "var(--font-a2z-r), sans-serif", color: "rgba(226,232,240,0.7)" }}
+                  >
+                    별자리 완성
+                  </p>
+                  <div className="relative">
+                    <h3
+                      className="text-xl font-medium mb-4"
+                      style={{
+                        fontFamily: "var(--font-a2z-m), sans-serif",
+                        color: CHAMPAGNE_GOLD,
+                        textShadow: "0 0 12px rgba(253,230,138,0.5), 0 0 24px rgba(253,230,138,0.25)",
+                      }}
+                    >
+                      {traitConfirmPopup.label}
+                    </h3>
+                    <p
+                      className="text-sm leading-relaxed mb-2"
+                      style={{ fontFamily: "var(--font-a2z-regular), sans-serif", color: SILVER_WHITE }}
+                    >
+                      {opening}
+                    </p>
+                    <p
+                      className="text-sm leading-relaxed mb-2"
+                      style={{ fontFamily: "var(--font-a2z-regular), sans-serif", color: SILVER_WHITE }}
+                    >
+                      {body}
+                    </p>
+                    <p
+                      className="text-sm font-medium mt-3"
+                      style={{
+                        fontFamily: "var(--font-a2z-m), sans-serif",
+                        color: CHAMPAGNE_GOLD,
+                      }}
+                    >
+                      {closing}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTraitConfirmPopup(null)}
+                    className="relative mt-5 w-full rounded-xl py-2.5 text-sm font-medium"
+                    style={{
+                      fontFamily: "var(--font-a2z-m), sans-serif",
+                      backgroundColor: CHAMPAGNE_GOLD,
+                      color: MIDNIGHT_BLUE,
+                    }}
+                  >
+                    확인
+                  </button>
+                </motion.div>
+              </motion.div>
+            );
+          })()}
+        </AnimatePresence>
+
+        {/* 레벨업(2~5단계) 축하 팝업 */}
+        <AnimatePresence>
+          {levelUpPopup && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center px-4 backdrop-blur-lg"
+              style={{ backgroundColor: "rgba(5,8,16,0.92)" }}
+              onClick={() => setLevelUpPopup(null)}
+            >
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                onClick={(e) => e.stopPropagation()}
+                className="relative w-full max-w-sm rounded-2xl p-6 overflow-hidden"
+                style={{
+                  backgroundColor: POPUP_BG,
+                  border: "1px solid #FDE68A",
+                  boxShadow: "0 0 0 1px rgba(253,230,138,0.2), 0 25px 50px -12px rgba(0,0,0,0.6)",
+                }}
+              >
+                <p
+                  className="relative text-[11px] font-medium uppercase tracking-wider mb-1"
+                  style={{ fontFamily: "var(--font-a2z-r), sans-serif", color: "rgba(226,232,240,0.7)" }}
+                >
+                  {TRAIT_LEVEL_NAMES[levelUpPopup.newLevel]} 단계
                 </p>
-                <p className="text-sm leading-relaxed mb-2" style={{ color: "#475569" }}>
-                  {traitConfirmPopup.body}
-                </p>
-                <p className="text-sm font-medium mt-3" style={{ color: "#0F172A" }}>
-                  {traitConfirmPopup.closing}
+                <h3
+                  className="relative text-xl font-medium mb-3"
+                  style={{
+                    fontFamily: "var(--font-a2z-m), sans-serif",
+                    color: CHAMPAGNE_GOLD,
+                    textShadow: "0 0 12px rgba(253,230,138,0.5)",
+                  }}
+                >
+                  {levelUpPopup.label}
+                </h3>
+                <p
+                  className="relative text-sm leading-relaxed"
+                  style={{ fontFamily: "var(--font-a2z-regular), sans-serif", color: SILVER_WHITE }}
+                >
+                  {levelUpPopup.message}
                 </p>
                 <button
                   type="button"
-                  onClick={() => setTraitConfirmPopup(null)}
-                  className="mt-4 w-full rounded-xl py-2.5 text-sm font-medium text-white"
-                  style={{ backgroundColor: MIDNIGHT_BLUE }}
+                  onClick={() => setLevelUpPopup(null)}
+                  className="relative mt-5 w-full rounded-xl py-2.5 text-sm font-medium"
+                  style={{
+                    fontFamily: "var(--font-a2z-m), sans-serif",
+                    backgroundColor: CHAMPAGNE_GOLD,
+                    color: MIDNIGHT_BLUE,
+                  }}
                 >
                   확인
                 </button>

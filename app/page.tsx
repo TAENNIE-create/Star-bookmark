@@ -26,19 +26,27 @@ export default function HomePage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    try {
-      const raw = getAppStorage().getItem(ONBOARDING_KEY);
-      const data = raw ? (JSON.parse(raw) as { userName?: string; hasVisited?: boolean }) : null;
-      const userName = data?.userName?.trim();
-      if (!userName) {
-        router.replace("/onboarding");
-        return;
+    function checkOnboarding() {
+      try {
+        const raw = getAppStorage().getItem(ONBOARDING_KEY);
+        const data = raw ? (JSON.parse(raw) as { userName?: string; hasVisited?: boolean }) : null;
+        const userName = data?.userName?.trim();
+        if (userName) {
+          setOnboardingChecked(true);
+          return true;
+        }
+      } catch {
+        // ignore
       }
-      setOnboardingChecked(true);
-    } catch {
-      router.replace("/onboarding");
-      return;
+      return false;
     }
+    if (checkOnboarding()) return;
+    // 로그인 시 Supabase 어댑터가 비동기로 로드되므로, 한 번 지연 후 재시도 (반복 노출 방지)
+    const t = window.setTimeout(() => {
+      if (checkOnboarding()) return;
+      router.replace("/onboarding");
+    }, 800);
+    return () => clearTimeout(t);
   }, [router]);
 
   useEffect(() => {

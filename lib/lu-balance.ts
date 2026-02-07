@@ -1,9 +1,10 @@
 /** 별조각 재화 – user_lu_balance (Supabase 또는 localStorage) */
 
 import { getAppStorage } from "./app-storage";
+import { INITIAL_SHARDS, MAX_DAILY_QUEST_SHARDS } from "./economy";
 
 export const USER_LU_BALANCE_KEY = "user_lu_balance";
-const INITIAL_LU = 30;
+const INITIAL_LU = INITIAL_SHARDS;
 const LEGACY_LU_KEY = "arisum-aria";
 export const LU_BALANCE_UPDATED_EVENT = "lu-balance-updated";
 
@@ -51,7 +52,7 @@ export function subtractLu(amount: number): boolean {
   return true;
 }
 
-/** 오늘 퀘스트로 벌어든 루 (최대 60) */
+/** 오늘 퀘스트로 벌어든 별조각 (최대 MAX_DAILY_QUEST_SHARDS) */
 const DAILY_QUEST_LU_KEY = "arisum-daily-quest-lu-earned";
 
 export function getTodayQuestLuEarned(): number {
@@ -60,7 +61,7 @@ export function getTodayQuestLuEarned(): number {
     const raw = getAppStorage().getItem(DAILY_QUEST_LU_KEY);
     const data = raw ? JSON.parse(raw) : {};
     if (data.date !== getTodayKey()) return 0;
-    return Math.min(60, Math.max(0, data.amount ?? 0));
+    return Math.min(MAX_DAILY_QUEST_SHARDS, Math.max(0, data.amount ?? 0));
   } catch {
     return 0;
   }
@@ -70,7 +71,7 @@ export function addTodayQuestLuEarned(amount: number): boolean {
   if (typeof window === "undefined") return false;
   const today = getTodayKey();
   const current = getTodayQuestLuEarned();
-  const next = Math.min(60, current + amount);
+  const next = Math.min(MAX_DAILY_QUEST_SHARDS, current + amount);
   if (next === current) return false;
   getAppStorage().setItem(
     DAILY_QUEST_LU_KEY,
@@ -90,10 +91,12 @@ export function subtractTodayQuestLuEarned(amount: number) {
   );
 }
 
-export const MAX_DAILY_QUEST_LU = 60;
-export const LU_PER_QUEST_COMPLETE = 20;
-export const LU_DAILY_REPORT_UNLOCK = 30;
-export const LU_REANALYZE = 15;
-export const LU_ARCHIVE_BOOK_UNLOCK = 600;
-/** 질문 답변 모드: 짧은 답변 → 일기 확장 시 10루 소모 */
-export const LU_QUESTION_DIARY = 10;
+export {
+  MAX_DAILY_QUEST_SHARDS,
+  SHARDS_PER_QUEST as LU_PER_QUEST_COMPLETE,
+  COST_DAILY_ANALYSIS as LU_DAILY_REPORT_UNLOCK,
+  COST_RE_ANALYSIS as LU_REANALYZE,
+  COST_MONTHLY_ARCHIVE_UNLOCK as LU_ARCHIVE_BOOK_UNLOCK,
+  COST_DIARY_MODE as LU_QUESTION_DIARY,
+} from "./economy";
+export const MAX_DAILY_QUEST_LU = MAX_DAILY_QUEST_SHARDS;

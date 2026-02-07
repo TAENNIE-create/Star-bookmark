@@ -3,7 +3,6 @@
 import { useEffect } from "react";
 import { CosmicBackground } from "./cosmic-background";
 import { CosmicFrame } from "./cosmic-frame";
-import { setLuBalance, addLu } from "../../lib/lu-balance";
 import { ARCHIVE_UNLOCKED_KEY } from "../../lib/archive-unlock";
 import { getAppStorage } from "../../lib/app-storage";
 
@@ -13,16 +12,11 @@ type CosmicLayoutWrapperProps = {
   children: React.ReactNode;
 };
 
-/** 배경(별가루·그라데이션·별똥별) + 레이아웃 래퍼 전역 적용 */
+/** 배경(별가루·그라데이션·별똥별) + 레이아웃 래퍼 전역 적용. 일회성 별조각 보너스 제거 → 초기 30부터. */
 export function CosmicLayoutWrapper({ children }: CosmicLayoutWrapperProps) {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const storage = getAppStorage();
-
-    if (!storage.getItem("arisum-lu-seeded-1000")) {
-      setLuBalance(1000);
-      storage.setItem("arisum-lu-seeded-1000", "1");
-    }
 
     if (!storage.getItem("arisum-one-time-cancel-20260202-202601")) {
       const rawReport = storage.getItem(REPORT_BY_DATE_KEY);
@@ -39,12 +33,6 @@ export function CosmicLayoutWrapper({ children }: CosmicLayoutWrapperProps) {
         storage.setItem(ARCHIVE_UNLOCKED_KEY, JSON.stringify({ months }));
       }
       storage.setItem("arisum-one-time-cancel-20260202-202601", "1");
-    }
-
-    if (!storage.getItem("arisum-one-time-2000-applied")) {
-      addLu(2000);
-      storage.setItem("arisum-one-time-2000-applied", "1");
-      window.dispatchEvent(new Event("lu-balance-updated"));
     }
   }, []);
 

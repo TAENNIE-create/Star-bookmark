@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import type { MoodScores } from "../../lib/arisum-types";
 import { MIDNIGHT_BLUE } from "../../lib/theme";
 import { getAppStorage } from "../../lib/app-storage";
+import { LoadingOverlay } from "./loading-overlay";
 
 type AnalysisPayload = {
   keywords: [string, string, string];
@@ -153,6 +154,7 @@ export function BreathingButton({ onAnalysisComplete }: BreathingButtonProps) {
 
   return (
     <>
+      {isAnalyzing && <LoadingOverlay message="diary-analysis" />}
       <div className="w-full flex flex-col items-center">
         <motion.button
           type="button"
@@ -222,7 +224,7 @@ export function BreathingButton({ onAnalysisComplete }: BreathingButtonProps) {
                 onChange={(e) => setJournal(e.target.value)}
                 rows={5}
                 disabled={isAnalyzing}
-                className="w-full rounded-xl border border-[#E2E8F0] bg-[#F4F7FB] px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/20 focus-visible:border-[#0F172A] resize-none disabled:opacity-60"
+                className="w-full rounded-xl border border-[#E2E8F0] bg-[#F4F7FB] px-4 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/20 focus-visible:border-[#0F172A] resize-none disabled:opacity-60"
                 style={{ color: MIDNIGHT_BLUE }}
                 placeholder="오늘 어떤 하루였는지, 떠오르는 생각이나 감정을 편하게 적어 보세요."
               />

@@ -128,6 +128,24 @@ export default function OnboardingPage() {
     setMounted(true);
   }, []);
 
+  // 이미 온보딩 완료한 사용자는 홈으로 리다이렉트 (반복 노출 방지)
+  useEffect(() => {
+    if (!mounted || typeof window === "undefined") return;
+    try {
+      const raw = getAppStorage().getItem(STORAGE_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw) as { userName?: string; hasVisited?: boolean; completedAt?: string };
+      const hasCompleted = Boolean(
+        (data?.userName?.trim()) || data?.hasVisited || data?.completedAt
+      );
+      if (hasCompleted) {
+        router.replace("/");
+      }
+    } catch {
+      // 파싱 실패 시 그대로 온보딩 진행
+    }
+  }, [mounted, router]);
+
   const currentPhrase = PHRASES[step];
   const isNameQuestionStep = step === 5;
   const isNameStep = isNameQuestionStep && nameInputVisible;

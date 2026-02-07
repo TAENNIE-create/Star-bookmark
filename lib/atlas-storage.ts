@@ -121,7 +121,17 @@ export function setCurrentConstellation(data: CurrentConstellation) {
   setActiveConstellations([{ id: "current", name: data.name, meaning: data.meaning, connectionStyle: data.connectionStyle, starIds: data.starIds }]);
 }
 
-/** 오늘 별 + 연결 정보를 atlas에 병합 */
+/** 뷰포트 10%~90% 구간 내 영구 랜덤 좌표 생성 (별이 화면에 골고루 퍼지도록) */
+function randomStarPositionInView(): { x: number; y: number } {
+  const min = 10;
+  const span = 80;
+  return {
+    x: min + Math.random() * span,
+    y: min + Math.random() * span,
+  };
+}
+
+/** 오늘 별 + 연결 정보를 atlas에 병합. 신규 별은 영구 랜덤 좌표 부여, 기존 별은 좌표 유지. */
 export function mergeAtlasWithNewStar(
   dateKey: string,
   starPosition: { x: number; y: number },
@@ -131,21 +141,27 @@ export function mergeAtlasWithNewStar(
 ) {
   const atlas = getGlobalAtlasData();
   const starId = `star-${dateKey}`;
+  const existingIds = new Set(atlas.stars.map((s) => s.id));
+  const existingStar = atlas.stars.find((s) => s.id === starId);
 
   const sizeScale = contentLength ? Math.min(2, 1 + contentLength / 400) : 1;
   const baseSize = 3;
   const size = Math.max(4, Math.min(6, baseSize * sizeScale));
 
+  /** 신규 별: 10~90% 랜덤 좌표. 기존 별: 기존 x,y 유지(지표 기반 계산 사용 안 함). */
+  const { x, y } = existingStar
+    ? { x: existingStar.x, y: existingStar.y }
+    : randomStarPositionInView();
+
   const newStar: AtlasStar = {
     id: starId,
     date: dateKey,
-    x: starPosition.x,
-    y: starPosition.y,
+    x,
+    y,
     size,
     keywords: [...keywords],
   };
 
-  const existingIds = new Set(atlas.stars.map((s) => s.id));
   const updatedStars = existingIds.has(starId)
     ? atlas.stars.map((s) => (s.id === starId ? newStar : s))
     : [...atlas.stars, newStar];

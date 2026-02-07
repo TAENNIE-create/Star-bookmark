@@ -31,6 +31,8 @@ type AnalyzeMonthlyResponse = {
   monthlyTitle: string;
   prologue: string;
   terrainComment: string;
+  /** 별지기의 해석 노트: 지표 간 모순/병행 포착 → 발견의 문장 */
+  interpretationNote?: string;
   modeAnalysis: MindMap;
   metricShift: Partial<MoodScores>;
   goldenSentences: { sentence: string; empathyComment: string }[];
@@ -38,12 +40,12 @@ type AnalyzeMonthlyResponse = {
 };
 
 const SPECTRUM_LABELS: { key: keyof MoodScores; label: string; low: string; high: string }[] = [
-  { key: "resilience", label: "감정회복", low: "침잠", high: "복원" },
-  { key: "selfAwareness", label: "사고방식", low: "본질", high: "실천" },
-  { key: "empathy", label: "관계맺기", low: "독립", high: "연결" },
-  { key: "meaningOrientation", label: "가치기준", low: "논리", high: "감정" },
-  { key: "openness", label: "도전정신", low: "안정", high: "모험" },
-  { key: "selfAcceptance", label: "자아수용", low: "채찍", high: "포용" },
+  { key: "resilience", label: "감정회복", low: "가라앉음", high: "다시 일어남" },
+  { key: "selfAwareness", label: "사고방식", low: "생각", high: "행동" },
+  { key: "empathy", label: "관계맺기", low: "혼자", high: "함께" },
+  { key: "meaningOrientation", label: "가치기준", low: "이성", high: "감정" },
+  { key: "openness", label: "도전정신", low: "익숙함", high: "새로움" },
+  { key: "selfAcceptance", label: "자아수용", low: "자책", high: "이해" },
   { key: "selfDirection", label: "삶의동력", low: "통제", high: "순응" },
 ];
 
@@ -108,7 +110,14 @@ export async function POST(req: Request) {
 ## 1. terrainComment (자아 지형도 AI 코멘트)
 한 달의 시작과 끝 7대 지표 변화를 보며, '생각의 무게중심이 어디로 움직였는지' 쉽게 풀어서 짚어주세요. 2줄 이내로.
 
-## 2. modeAnalysis (마음의 지도 - 7개 항목)
+## 2. interpretationNote (별지기의 해석 노트 - Paradox Logic)
+개별 지표 요약이 아니라, **두 개 이상의 지표나 감정이 '충돌'하거나 '병행'하는 지점**을 찾아 그 심리적 의미를 해석하세요.
+- 예: [감정회복·가라앉음]과 [삶의동력·통제/순응]이 동시에 움직인다 → "불안은 보통 우리를 멈추게 하지만, 당신은 그 불안을 연료 삼아 앞으로 나갔습니다. 이는 변화 직전의 가장 역동적인 신호입니다."
+- 예: 어떤 지표는 낮고 [사고방식·생각]은 높다 → "겉으로는 멈춰 있는 듯 보였지만, 내면은 그 어느 때보다 치열하게 움직였습니다. 겨울의 시간을 잘 보내셨네요."
+- 예: [가치기준·이성]과 [감정]이 번갈아 나타난다 → "머리와 가슴이 번갈아 목소리를 냈던 한 달입니다. 이 치열한 줄다리기는 결국 가장 후회 없는 선택을 하기 위한 신중한 과정이었습니다."
+**톤**: "보통 사람들은 ~하지만, 당신은 ~했습니다" 같은 대조로 사용자의 고유한 반응 패턴을 칭찬하고 정의하세요. **뻔한 위로가 아닌, 데이터를 근거로 한 '발견의 문장'**이어야 합니다. 2~4문장, 해요체.
+
+## 3. modeAnalysis (마음의 지도 - 7개 항목)
 일기 속 구체적인 사례를 짧게 언급하면서, 각 항목을 한 문장씩 쉽게 풀어주세요. "변화의 의지가 강해졌다"처럼 추상적으로 말하지 말고, 일기에서 나온 실제 에피소드나 표현을 담아주세요.
 예시: "인력거 대신 자동차를 타겠다고 결심했던 그날처럼, 새로운 길을 가려는 마음이 아주 강하게 느껴졌어요."
 - dominantPersona: 이달의 대표 마음 (이번 달 가장 자주 드러난 행동과 마음의 모습)
@@ -119,10 +128,11 @@ export async function POST(req: Request) {
 - unconsciousLanguage: 입버릇처럼 쓴 말 (일기에 자주 반복된 말이나 표현)
 - latentPotential: 새로 돋아난 싹 (후반부 일기에서 살짝 보이기 시작한 좋은 변화)
 
-## 3. goldenSentences (별지기가 골라준 문장 - 극F 공감)
-사용자 아픔과 기쁨에 온 마음으로 공감하세요. empathyComment는 **딱 한 문장**, **해요체(~해요)**로 통일.
+## 4. goldenSentences (별지기가 골라준 문장 - 극F 공감)
+- **sentence**: 일기 본문에 사용자가 실제로 썼던 문장을 **끊지 말고 그대로** 인용하세요. 해요체로 바꾸거나 요약·재작성하지 마세요. 원문을 한 글자도 바꾸지 않고 복사해서 넣으세요.
+- **empathyComment**: 그 문장에 대한 별지기의 공감 한 문장. **해요체(~해요)**로 통일.
 
-## 4. charmSentence (매력 섹션)
+## 5. charmSentence (매력 섹션)
 사용자의 핵심을 사회적 강점으로 풀어낸 매력적인 한 문장. 해요체로.
 
 ## 출력 (JSON만)
@@ -130,6 +140,7 @@ export async function POST(req: Request) {
   "monthlyTitle": "한 달을 관통하는 시적 제목",
   "prologue": "별지기 서문 (2~4문장)",
   "terrainComment": "자아 지형도 AI 코멘트 (2줄 이내)",
+  "interpretationNote": "별지기의 해석 노트: 지표 간 모순·병행을 포착한 발견의 문장 2~4문장(해요체)",
   "modeAnalysis": {
     "dominantPersona": "...",
     "shadowConfession": "...",
@@ -141,7 +152,7 @@ export async function POST(req: Request) {
   },
   "metricShift": { "resilience": 숫자, "selfAwareness": 숫자, ... (1일차 대비 말일차 변화량) },
   "goldenSentences": [
-    { "sentence": "선명했던 문장", "empathyComment": "극F 공감 한 문장" },
+    { "sentence": "일기 원문에서 그대로 인용한 문장(해요체 변환 금지)", "empathyComment": "극F 공감 한 문장(해요체)" },
     ... (3~5개)
   ],
   "charmSentence": "매력 한 문장"
