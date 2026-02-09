@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { getCorsHeaders } from "../../../lib/api-cors";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -16,14 +17,19 @@ type AnalyzePhotoRequest = {
   imageBase64: string;
 };
 
+export function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: getCorsHeaders() });
+}
+
 export async function POST(req: Request) {
+  const headers = getCorsHeaders(req);
   try {
     const body = (await req.json()) as AnalyzePhotoRequest;
     let imageBase64 = body.imageBase64?.trim();
     if (!imageBase64) {
       return NextResponse.json(
         { error: "imageBase64가 필요합니다." },
-        { status: 400 }
+        { status: 400, headers }
       );
     }
     if (imageBase64.startsWith("data:")) {
@@ -33,7 +39,7 @@ export async function POST(req: Request) {
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
         { error: "OpenAI API 키가 설정되어 있지 않습니다." },
-        { status: 500 }
+        { status: 500, headers }
       );
     }
 
@@ -98,15 +104,15 @@ export async function POST(req: Request) {
       Q4,
     ];
 
-    return NextResponse.json({
-      visualDescription,
-      questions,
-    });
+    return NextResponse.json(
+      { visualDescription, questions },
+      { headers }
+    );
   } catch (error) {
     console.error("[ANALYZE_PHOTO_ERROR]", error);
     return NextResponse.json(
       { error: "사진 분석 중 오류가 발생했습니다." },
-      { status: 500 }
+      { status: 500, headers }
     );
   }
 }

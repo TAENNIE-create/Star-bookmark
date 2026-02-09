@@ -84,9 +84,9 @@ export default function HomePage() {
   }
 
   return (
-    <div className="min-h-screen flex justify-center bg-transparent">
+    <div className="min-h-[100dvh] flex justify-center bg-transparent">
       <div
-        className="w-full max-w-md min-h-screen relative flex flex-col bg-transparent pb-24"
+        className="w-full max-w-md min-h-[100dvh] relative flex flex-col bg-transparent pb-24"
         style={{ color: MIDNIGHT_BLUE }}
       >
         <div className="h-6 flex-shrink-0" aria-hidden />
@@ -98,18 +98,18 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* 1구역: 밤하늘(Atlas) – 높이 약 42vh */}
+        {/* 1구역: 밤하늘(Atlas) – 비율 4 (고정 높이 대신 flex) */}
         <motion.section
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.4 }}
-          className="flex-shrink-0 px-4 pb-4"
+          className="flex-[4] min-h-[min(28vh,200px)] max-h-[42vh] flex flex-col px-4 pb-4 overflow-hidden"
         >
           {activeTab === "home" && <MyRoom keywords={latestAnalysis?.keywords ?? null} />}
         </motion.section>
 
-        {/* 2구역: 일기 쓰기 버튼 – 밤하늘과 퀘스트 사이 정중앙 */}
-        <main className="flex-shrink-0 px-4 flex items-center justify-center py-7">
+        {/* 2구역: 일기 쓰기 버튼 – 비율 2 */}
+        <main className="flex-[2] min-h-[min(12vh,80px)] max-h-[20vh] flex items-center justify-center px-4 py-4">
           {activeTab === "home" && (
             <BreathingButton
               onAnalysisComplete={(data) =>
@@ -122,8 +122,8 @@ export default function HomePage() {
           )}
         </main>
 
-        {/* 3구역: 퀘스트 – 탭 바 바로 위까지 */}
-        <section className="flex-1 min-h-0 px-4 pt-6 pb-6 flex flex-col">
+        {/* 3구역: 퀘스트 – 비율 4, 남은 공간 채움 */}
+        <section className="flex-[4] min-h-[24vh] px-4 pt-6 pb-6 flex flex-col overflow-auto">
           {activeTab === "home" && <QuestCard />}
         </section>
 

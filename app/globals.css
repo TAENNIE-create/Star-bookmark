@@ -12,6 +12,9 @@ html {
   --mud-green: #64748B;
   --light-green: #E2E8F0;
   --card-green: #F1F5F9;
+  /* 세이프 에어리어(노치·홈 바) – env() 미지원 환경은 0px */
+  --safe-area-inset-top: env(safe-area-inset-top, 0px);
+  --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* next/font가 html에 --font-a2z-r, --font-a2z-m 주입. Tailwind fontFamily 연동 */
@@ -38,6 +41,7 @@ label {
 }
 
 /* 기본 본문: 에이투지체 Regular, 고급 앱 가독성(넉넉한 행간·자간) */
+/* 상하단 세이프 에어리어 적용(노치·홈 바에 콘텐츠 가리지 않음) */
 body {
   background: var(--background);
   color: var(--foreground);
@@ -45,6 +49,28 @@ body {
   font-weight: 400;
   letter-spacing: 0.03em;
   line-height: 1.7;
+  padding-top: max(2.5rem, var(--safe-area-inset-top));
+  padding-bottom: var(--safe-area-inset-bottom);
+}
+
+/* 터치 피드백: 하이라이트 제거 + 부드러운 시각 반응 (모바일 앱) */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+button,
+[role="button"],
+a,
+input[type="button"],
+input[type="submit"],
+input[type="reset"] {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+button:active,
+[role="button"]:active,
+a:active {
+  opacity: 0.92;
 }
 
 /* 왼쪽 정렬되어 있던 본문·문단만 양쪽 정렬 (가운데/버튼/제목은 그대로) */

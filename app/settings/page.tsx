@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import { Capacitor } from "@capacitor/core";
 import { TabBar, type TabKey } from "../../components/arisum/tab-bar";
 import { MIDNIGHT_BLUE, MUTED, BORDER_LIGHT, SKY_WHITE } from "../../lib/theme";
 import { getAppStorage } from "../../lib/app-storage";
@@ -80,8 +81,11 @@ export default function SettingsPage() {
 
   const handleSignIn = async (provider: "google" | "kakao") => {
     const supabase = createClient();
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent("/settings")}`;
+    const platform = typeof window !== "undefined" ? Capacitor.getPlatform() : "";
+    const redirectTo =
+      platform === "android" || platform === "ios"
+        ? "com.starbookmark.app://login-callback"
+        : `${typeof window !== "undefined" ? window.location.origin : ""}/auth/callback?next=${encodeURIComponent("/settings")}`;
     const { data, error } = await supabase.auth.signInWithOAuth({ provider, options: { redirectTo } });
     if (error) {
       console.error("[OAuth]", error);

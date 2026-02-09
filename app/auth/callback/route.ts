@@ -1,18 +1,8 @@
-import { createClient } from "../../../lib/supabase/server";
 import { NextResponse } from "next/server";
 
-export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
-  const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/";
+export const dynamic = "force-static";
 
-  if (code) {
-    const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) {
-      return NextResponse.redirect(`${origin}${next}`);
-    }
-  }
-
-  return NextResponse.redirect(`${origin}/?error=auth`);
+/** 정적 내보내기용: request를 읽지 않고 고정 리다이렉트만 반환해 정적 생성 가능. 실제 OAuth 콜백은 서버 배포 시에만 동작 */
+export async function GET() {
+  return NextResponse.redirect(new URL("/", "https://placeholder.invalid"));
 }

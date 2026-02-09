@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import type { MoodScores } from "../../lib/arisum-types";
 import { MIDNIGHT_BLUE } from "../../lib/theme";
+import { getApiUrl } from "../../lib/api-client";
 import { getAppStorage } from "../../lib/app-storage";
 import { LoadingOverlay } from "./loading-overlay";
 
@@ -86,7 +87,7 @@ export function BreathingButton({ onAnalysisComplete }: BreathingButtonProps) {
           ? getAppStorage().getItem("user_identity_summary")
           : null;
 
-      const res = await fetch("/api/analyze", {
+      const res = await fetch(getApiUrl("/api/analyze"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

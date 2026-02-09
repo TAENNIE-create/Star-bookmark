@@ -1,8 +1,11 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { CosmicLayoutWrapper } from "../components/arisum/cosmic-layout-wrapper";
 import { SupabaseStorageProvider } from "../components/arisum/supabase-storage-provider";
+import { RevenueCatProvider } from "../components/arisum/revenuecat-provider";
+import { AuthDeepLinkHandler } from "../components/arisum/auth-deep-link-handler";
+import { StatusBarInit } from "../components/arisum/status-bar-init";
 import { StoreModalProvider } from "../components/arisum/store-modal-provider";
 
 /** 기본 본문용: 에이투지체 Light */
@@ -38,6 +41,17 @@ export const metadata: Metadata = {
   description: "소중한 별의 기록을 지키는 일기와 별자리",
 };
 
+/** 앱 전용: 확대/축소 비활성화, 폰 너비에 맞게 스케일 고정 */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  minimumScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  themeColor: "#F4F7FB",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -45,10 +59,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko" className={`${a2zLight.variable} ${a2zRegular.variable} ${a2zMedium.variable} ${nanumSquareRoundB.variable}`}>
-      <body className={`${a2zLight.className} antialiased pt-10`}>
+      <body className={`${a2zLight.className} antialiased`}>
+        <StatusBarInit />
+        <AuthDeepLinkHandler />
         <SupabaseStorageProvider>
           <CosmicLayoutWrapper>
+            <RevenueCatProvider>
             <StoreModalProvider>{children}</StoreModalProvider>
+          </RevenueCatProvider>
           </CosmicLayoutWrapper>
         </SupabaseStorageProvider>
       </body>

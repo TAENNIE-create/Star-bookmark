@@ -1,0 +1,45 @@
+# API·로그인 설정 (APK/배포)
+
+## 1. API 베이스 URL (폰/APK)
+
+폰에서는 `localhost`에 API 서버가 없으므로, **배포된 API 서버 URL**을 환경 변수로 지정해야 합니다.
+
+- **`.env.local`** (또는 빌드 시 사용하는 env)에 추가:
+  ```env
+  NEXT_PUBLIC_API_BASE_URL=https://star-bookmark.netlify.app
+  ```
+- 값을 비우거나 넣지 않으면 앱은 **상대 경로**(`/api/...`)로 요청합니다 (같은 호스트 기준).
+- APK 빌드 시 이 값을 넣어 두면, 모든 `fetch(getApiUrl('/api/...'))` 호출이 위 주소로 갑니다.
+
+**참고:** 이 프로젝트는 `output: "export"`로 정적 빌드하므로, API 라우트(`app/api/.../route.ts`)는 **별도 서버**(Netlify Functions, Node 서버 등)에서 실행해야 합니다. 그 서버 URL을 `NEXT_PUBLIC_API_BASE_URL`에 넣으면 됩니다.
+
+---
+
+## 2. 로그인 리다이렉트 (구글/카카오)
+
+- **앱(Android/iOS)**에서는 `redirectTo`가 **`com.starbookmark.app://login-callback`**으로 설정됩니다.
+- 로그인 후 브라우저에서 앱으로 돌아올 때 **Capacitor `App.addListener('appUrlOpen', ...)`**로 URL을 받아, 해시의 `access_token`/`refresh_token`으로 Supabase 세션을 복구합니다.
+
+**Supabase 대시보드 설정:**
+
+1. **Authentication → URL Configuration → Redirect URLs**에 다음을 추가:
+   - `com.starbookmark.app://login-callback`
+   - (웹 사용 시) `https://star-bookmark.netlify.app/auth/callback`
+
+---
+
+## 3. CORS (API 서버에서 실행 시)
+
+`app/api/.../route.ts`를 **서버에서 실행할 때** Capacitor/로컬에서 오는 요청을 허용하려면 CORS 헤더가 필요합니다.
+
+- **`lib/api-cors.ts`**의 `getCorsHeaders(request)`를 사용해 응답에 헤더를 붙입니다.
+- 허용 origin: `capacitor://localhost`, `http://localhost`, `http://localhost:3000`, `http://127.0.0.1`, `*.netlify.app` 등.
+- 이미 적용된 라우트 예: `analyze`, `transcribe`, `voice-dialogue`, `expand-to-diary`, `photo-to-diary`, `voice-to-diary`, `analyze-photo`.
+- 나머지 라우트(`analyze-monthly`, `constellations`, `personality-profile`, `generate-question`, `generate-summary`)에도 동일하게 `getCorsHeaders`를 import하고, `OPTIONS` 핸들러와 각 `NextResponse.json(..., { headers })`에 `headers`를 넣으면 됩니다.
+
+---
+
+## 4. 별조각 차감 (원자적 동작)
+
+- **일기 해금·재분석·인터뷰/사진/음성 일기 생성** 등: **API 호출이 성공한 뒤에만** 별조각을 차감합니다.
+- API 실패 시 별조각은 차감되지 않으며, 사용자가 별조각만 잃는 상황은 발생하지 않습니다.

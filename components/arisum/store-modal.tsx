@@ -8,6 +8,13 @@ import {
   type MembershipTier,
   COST_PERMANENT_MEMORY_KEY,
 } from "../../lib/economy";
+import {
+  getProductIdForMembershipTier,
+  isShardProduct,
+  isMembershipProduct,
+} from "../../lib/revenuecat-products";
+import type { PurchasesPackage } from "@revenuecat/purchases-capacitor";
+import { useRevenueCat } from "./revenuecat-provider";
 
 const BORDER_LIGHT = "#E2E8F0";
 const MUTED = "#64748B";
@@ -70,6 +77,14 @@ export function StoreModal({ open, onClose }: StoreModalProps) {
   const [tab, setTab] = useState<TabId>("membership");
   const [showComingSoon, setShowComingSoon] = useState(false);
   const [subscribeBurst, setSubscribeBurst] = useState<string | null>(null);
+  const [paywallError, setPaywallError] = useState<string | null>(null);
+  const [offerings, setOfferings] = useState<{
+    membership: PurchasesPackage[];
+    shards: PurchasesPackage[];
+  }>({ membership: [], shards: [] });
+  const [offeringsLoading, setOfferingsLoading] = useState(false);
+  const [purchasingProductId, setPurchasingProductId] = useState<string | null>(null);
+  const revenueCat = useRevenueCat();
 
   useEffect(() => {
     if (!open) return;
@@ -80,7 +95,58 @@ export function StoreModal({ open, onClose }: StoreModalProps) {
     return () => window.removeEventListener("keydown", onEscape);
   }, [open, onClose]);
 
-  const handleSubscribe = () => setShowComingSoon(true);
+  useEffect(() => {
+    if (!open || !revenueCat.isAvailable) return;
+    setOfferingsLoading(true);
+    revenueCat
+      .getOfferings()
+      .then((o) => {
+        if (!o?.current?.availablePackages?.length) {
+          setOfferings({ membership: [], shards: [] });
+          return;
+        }
+        const membership: PurchasesPackage[] = [];
+        const shards: PurchasesPackage[] = [];
+        for (const pkg of o.current.availablePackages) {
+          const id = pkg.product?.identifier ?? "";
+          if (isMembershipProduct(id)) membership.push(pkg);
+          else if (isShardProduct(id)) shards.push(pkg);
+        }
+        setOfferings({ membership, shards });
+      })
+      .catch(() => setOfferings({ membership: [], shards: [] }))
+      .finally(() => setOfferingsLoading(false));
+  }, [open, revenueCat.isAvailable, revenueCat.getOfferings]);
+
+  const handlePurchasePackage = async (pkg: PurchasesPackage) => {
+    const id = pkg.product?.identifier ?? "";
+    setPaywallError(null);
+    setPurchasingProductId(id);
+    try {
+      await revenueCat.purchasePackage(pkg);
+      onClose();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setPaywallError(msg);
+    } finally {
+      setPurchasingProductId(null);
+    }
+  };
+
+  const handleSubscribe = async () => {
+    if (revenueCat.isAvailable) {
+      setPaywallError(null);
+      try {
+        await revenueCat.presentPaywall({ displayCloseButton: true });
+        onClose();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setPaywallError(msg);
+      }
+    } else {
+      setShowComingSoon(true);
+    }
+  };
   const handleBuyShards = () => setShowComingSoon(true);
 
   if (!open) return null;
@@ -158,6 +224,36 @@ export function StoreModal({ open, onClose }: StoreModalProps) {
                 className="px-4 py-5 space-y-8 min-h-full"
                 style={{ backgroundColor: MIDNIGHT_BAND }}
               >
+                {revenueCat.isAvailable && revenueCat.isPro && (
+                  <p className="text-sm font-a2z-m text-center py-2 rounded-xl" style={{ color: CHAMPAGNE_GOLD, backgroundColor: "rgba(253,230,138,0.12)" }}>
+                    Reflexio/Star-Bookmark Pro 구독 중
+                  </p>
+                )}
+                {revenueCat.isAvailable && (
+                  <div className="flex justify-center">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setPaywallError(null);
+                        try {
+                          await revenueCat.presentCustomerCenter();
+                        } catch (e) {
+                          const msg = e instanceof Error ? e.message : String(e);
+                          setPaywallError(msg);
+                        }
+                      }}
+                      className="text-sm font-a2z-r underline transition-opacity hover:opacity-80"
+                      style={{ color: SILVER_BLUE }}
+                    >
+                      구독 관리
+                    </button>
+                  </div>
+                )}
+                {paywallError && (
+                  <p className="text-sm font-a2z-r text-center py-2 rounded-xl" style={{ color: "#DC2626", backgroundColor: "rgba(220,38,38,0.08)" }}>
+                    {paywallError}
+                  </p>
+                )}
                 {MEMBERSHIP_TIERS.map((tier, idx) => {
                   const plan = MEMBERSHIP_PLANS[tier];
                   const card = MEMBERSHIP_CARD_CONFIG[tier];
@@ -312,27 +408,44 @@ export function StoreModal({ open, onClose }: StoreModalProps) {
                           ))}
                         </ul>
 
-                        {!isFree && (
-                          <motion.button
-                            type="button"
-                            onClick={() => {
-                              setSubscribeBurst(tier);
-                              setTimeout(() => setSubscribeBurst(null), 400);
-                              handleSubscribe();
-                            }}
-                            whileTap={{ scale: 0.97 }}
-                            className="w-full py-3 rounded-xl text-sm font-a2z-m transition-shadow duration-200"
-                            style={{
-                              backgroundColor: CHAMPAGNE_GOLD,
-                              color: MIDNIGHT_BLUE,
-                              boxShadow: subscribeBurst === tier
-                                ? `0 0 0 4px rgba(253,230,138,0.5), 0 0 16px rgba(253,230,138,0.4)`
-                                : "0 4px 14px rgba(253,230,138,0.3)",
-                            }}
-                          >
-                            구독하기
-                          </motion.button>
-                        )}
+                        {!isFree && (() => {
+                          const productId = getProductIdForMembershipTier(tier);
+                          const pkg = productId
+                            ? offerings.membership.find(
+                                (p) => (p.product?.identifier ?? "") === productId
+                              )
+                            : undefined;
+                          const isPurchasing =
+                            pkg && purchasingProductId === (pkg.product?.identifier ?? "");
+                          return (
+                            <motion.button
+                              type="button"
+                              disabled={!!purchasingProductId}
+                              onClick={() => {
+                                if (pkg) {
+                                  setSubscribeBurst(tier);
+                                  setTimeout(() => setSubscribeBurst(null), 400);
+                                  handlePurchasePackage(pkg);
+                                } else {
+                                  setSubscribeBurst(tier);
+                                  setTimeout(() => setSubscribeBurst(null), 400);
+                                  handleSubscribe();
+                                }
+                              }}
+                              whileTap={{ scale: 0.97 }}
+                              className="w-full py-3 rounded-xl text-sm font-a2z-m transition-shadow duration-200 disabled:opacity-70"
+                              style={{
+                                backgroundColor: CHAMPAGNE_GOLD,
+                                color: MIDNIGHT_BLUE,
+                                boxShadow: subscribeBurst === tier
+                                  ? `0 0 0 4px rgba(253,230,138,0.5), 0 0 16px rgba(253,230,138,0.4)`
+                                  : "0 4px 14px rgba(253,230,138,0.3)",
+                              }}
+                            >
+                              {isPurchasing ? "결제 중…" : pkg ? `${pkg.product?.priceString ?? ""} 구매하기` : "구독하기"}
+                            </motion.button>
+                          );
+                        })()}
                       </div>
                       </motion.div>
                     </motion.div>
@@ -346,6 +459,63 @@ export function StoreModal({ open, onClose }: StoreModalProps) {
                 className="px-4 py-5 space-y-6"
                 style={{ backgroundColor: SKY_WHITE }}
               >
+                {revenueCat.isAvailable && offerings.shards.length > 0 ? (
+                  offerings.shards.map((pkg, packIdx) => {
+                    const id = pkg.product?.identifier ?? "";
+                    const isPurchasing = purchasingProductId === id;
+                    const amount = id.includes("100") || id === "starter" ? 100 : id.includes("300") || id === "balance" ? 300 : 700;
+                    const name = amount === 100 ? "스타터 팩" : amount === 300 ? "밸런스 팩" : "서포터 팩";
+                    const recommended = amount === 300;
+                    return (
+                      <motion.button
+                        key={id}
+                        type="button"
+                        disabled={!!purchasingProductId}
+                        onClick={() => handlePurchasePackage(pkg)}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: packIdx * 0.05 }}
+                        className="w-full relative rounded-2xl p-5 flex flex-col items-center text-left border transition-colors hover:opacity-95 disabled:opacity-70"
+                        style={{
+                          backgroundColor: "#FFFFFF",
+                          border: `1px solid rgba(253,230,138,0.5)`,
+                          boxShadow: "0 20px 50px rgba(0,0,0,0.05)",
+                        }}
+                      >
+                        {recommended && (
+                          <div
+                            className="absolute top-0 right-0 px-4 py-1.5 text-[10px] font-a2z-m shadow-sm"
+                            style={{
+                              backgroundColor: CHAMPAGNE_GOLD,
+                              color: MIDNIGHT_BLUE,
+                              borderBottomLeftRadius: 8,
+                              boxShadow: "0 2px 8px rgba(253,230,138,0.4)",
+                            }}
+                          >
+                            가장 합리적인 선택
+                          </div>
+                        )}
+                        <span className="text-2xl mb-2" style={{ color: CHAMPAGNE_GOLD }} aria-hidden>{LU_ICON}</span>
+                        <span className="font-a2z-m text-lg w-full text-center mb-0.5" style={{ color: MIDNIGHT_BLUE }}>
+                          {name}
+                        </span>
+                        <span className="font-a2z-m text-2xl w-full text-center mb-1" style={{ color: MIDNIGHT_BLUE }}>
+                          {amount} 별조각
+                        </span>
+                        <span className="font-a2z-r text-sm w-full text-center mb-4" style={{ color: MUTED }}>
+                          {pkg.product?.priceString ?? ""}
+                        </span>
+                        <span
+                          className="w-full py-2.5 rounded-full text-sm font-a2z-m text-center text-white"
+                          style={{ backgroundColor: MIDNIGHT_BLUE }}
+                        >
+                          {isPurchasing ? "결제 중…" : "구매하기"}
+                        </span>
+                      </motion.button>
+                    );
+                  })
+                ) : (
+                  <>
                 {SHARD_PACKS.map((pack, packIdx) => {
                   const isStarter = pack.id === "starter";
                   const isBalance = pack.id === "balance";
@@ -469,6 +639,8 @@ export function StoreModal({ open, onClose }: StoreModalProps) {
                     </motion.button>
                   );
                 })}
+                </>
+                )}
                 <p className="text-xs font-a2z-r pt-4 border-t mt-2" style={{ color: MUTED, borderColor: "rgba(253,230,138,0.3)" }}>
                   기억의 열쇠(특정 달 영구 소장)는 {COST_PERMANENT_MEMORY_KEY} 별조각입니다. 기록함에서 해금할 수 있습니다.
                 </p>

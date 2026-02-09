@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { getCorsHeaders } from "../../../lib/api-cors";
 import type { MoodScores } from "../../../lib/arisum-types";
 import { MOOD_SCORE_KEYS } from "../../../lib/arisum-types";
 import { TRAITS, TRAIT_CATEGORY_ORDER } from "../../../constants/traits";
@@ -66,7 +67,12 @@ type AnalyzeResponse = {
   newlyConfirmedTrait?: { traitId: string; label: string; opening: string; body: string; closing: string };
 };
 
+export function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: getCorsHeaders() });
+}
+
 export async function POST(req: Request) {
+  const headers = getCorsHeaders(req);
   try {
     const body = (await req.json()) as AnalyzeRequest;
     const journal = body.journal?.trim();
@@ -84,14 +90,14 @@ export async function POST(req: Request) {
     if (texts.length === 0) {
       return NextResponse.json(
         { error: "journal 또는 journals는 비어 있을 수 없습니다." },
-        { status: 400 }
+        { status: 400, headers }
       );
     }
 
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
         { error: "OpenAI API 키가 설정되어 있지 않습니다." },
-        { status: 500 }
+        { status: 500, headers }
       );
     }
 
@@ -180,7 +186,7 @@ quests는 반드시 5개. 각 문장은 '~하기'로 끝내고, 내일 15분 내
     if (!content) {
       return NextResponse.json(
         { error: "모델 응답을 가져올 수 없습니다." },
-        { status: 500 }
+        { status: 500, headers }
       );
     }
 
@@ -488,28 +494,31 @@ JSON만 출력. 형식: {"constellations":[{"id":"c1","name":"...","meaning":"..
 
     const singleForCompat = currentConstellations.length > 0 ? { name: currentConstellations[0]!.name, meaning: currentConstellations[0]!.meaning, connectionStyle: currentConstellations[0]!.connectionStyle, starIds: currentConstellations[0]!.starIds } : undefined;
 
-    return NextResponse.json({
-      mood,
-      insight,
-      quests,
-      updatedArchive,
-      identityArchive,
-      keywords,
-      metrics,
-      scores: metrics,
-      todayFlow,
-      gardenerWord: insight,
-      growthSeeds: quests,
-      counselorLetter: insight,
-      updatedSummary: updatedArchive,
-      starPosition,
-      currentConstellations: currentConstellations.length > 0 ? currentConstellations : undefined,
-      currentConstellation: singleForCompat,
-      starConnections: starConnections ?? [],
-      newlyConfirmedTrait: newlyConfirmedTrait ?? undefined,
-      traitIdsIncrementedForThisDate:
-        traitIdsIncrementedForThisDate.length > 0 ? traitIdsIncrementedForThisDate : undefined,
-    });
+    return NextResponse.json(
+      {
+        mood,
+        insight,
+        quests,
+        updatedArchive,
+        identityArchive,
+        keywords,
+        metrics,
+        scores: metrics,
+        todayFlow,
+        gardenerWord: insight,
+        growthSeeds: quests,
+        counselorLetter: insight,
+        updatedSummary: updatedArchive,
+        starPosition,
+        currentConstellations: currentConstellations.length > 0 ? currentConstellations : undefined,
+        currentConstellation: singleForCompat,
+        starConnections: starConnections ?? [],
+        newlyConfirmedTrait: newlyConfirmedTrait ?? undefined,
+        traitIdsIncrementedForThisDate:
+          traitIdsIncrementedForThisDate.length > 0 ? traitIdsIncrementedForThisDate : undefined,
+      },
+      { headers }
+    );
   } catch (error) {
     console.error("[ANALYZE_ERROR]", error);
 
@@ -530,13 +539,13 @@ JSON만 출력. 형식: {"constellations":[{"id":"c1","name":"...","meaning":"..
           error:
             "OpenAI API 키가 올바르지 않습니다. https://platform.openai.com/account/api-keys 에서 새 키를 복사해 .env.local 의 OPENAI_API_KEY 값을 교체해 주세요.",
         },
-        { status: 500 }
+        { status: 500, headers }
       );
     }
 
     return NextResponse.json(
       { error: "분석 중 오류가 발생했습니다." },
-      { status: 500 }
+      { status: 500, headers }
     );
   }
 }

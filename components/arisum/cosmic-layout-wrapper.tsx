@@ -12,7 +12,7 @@ type CosmicLayoutWrapperProps = {
   children: React.ReactNode;
 };
 
-/** 배경(별가루·그라데이션·별똥별) + 레이아웃 래퍼 전역 적용. 일회성 별조각 보너스 제거 → 초기 30부터. */
+/** 배경(별가루·그라데이션·별똥별) + 레이아웃 래퍼 전역 적용. 별조각은 초기 30만 지급(단발성 1000/2000 보너스 없음). */
 export function CosmicLayoutWrapper({ children }: CosmicLayoutWrapperProps) {
   useEffect(() => {
     if (typeof window === "undefined") return;

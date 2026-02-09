@@ -6,9 +6,22 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "cap:assets": "npx capacitor-assets generate --android --assetPath assets",
+    "cap:icon": "node scripts/copy-android-icon.cjs",
+    "cap:sync": "npx cap sync",
+    "cap:android": "npm run build && npm run cap:icon && npx cap sync",
+    "apk:prepare": "npm run build && npm run cap:icon && npx cap sync",
+    "android": "npx cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.0.2",
+    "@capacitor/app": "^8.0.0",
+    "@capacitor/cli": "^8.0.2",
+    "@capacitor/core": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.0",
+    "@revenuecat/purchases-capacitor": "^12.1.1",
+    "@revenuecat/purchases-capacitor-ui": "^12.1.1",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.93.3",
     "framer-motion": "^12.29.2",
@@ -19,6 +32,7 @@
     "react-dom": "19.2.3"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

@@ -7,6 +7,7 @@ import { TabBar, type TabKey } from "../../components/arisum/tab-bar";
 import type { MoodScores } from "../../lib/arisum-types";
 import { MOOD_SCORE_KEYS } from "../../lib/arisum-types";
 import { LU_ICON, LU_LABEL, SKY_WHITE, MIDNIGHT_BLUE, BORDER_LIGHT, MUTED } from "../../lib/theme";
+import { getApiUrl } from "../../lib/api-client";
 import { getAppStorage } from "../../lib/app-storage";
 
 const SCORES_KEY = "arisum-latest-scores";
@@ -442,7 +443,7 @@ function SectionConstellation({ lu }: { lu: number }) {
     }
 
     setLoading(true);
-    fetch("/api/constellations", {
+    fetch(getApiUrl("/api/constellations"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

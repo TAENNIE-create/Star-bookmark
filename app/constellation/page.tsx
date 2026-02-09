@@ -8,6 +8,7 @@ import { getUserName } from "../../lib/home-greeting";
 import { getGlobalAtlasData, getActiveConstellations, CURRENT_ACTIVE_CONSTELLATIONS_KEY, type ConnectionStyle, type ActiveConstellation } from "../../lib/atlas-storage";
 import type { MoodScores } from "../../lib/arisum-types";
 import { MOOD_SCORE_KEYS } from "../../lib/arisum-types";
+import { getApiUrl } from "../../lib/api-client";
 import { getAppStorage } from "../../lib/app-storage";
 import { TRAIT_CATEGORY_ORDER, TRAIT_CATEGORY_LABELS } from "../../constants/traits";
 import type { TraitCategory } from "../../constants/traits";
@@ -381,7 +382,7 @@ export default function ConstellationPage() {
             })()
           : "";
       if (!background) setIsLoadingTraits(true);
-      fetch("/api/personality-profile", {
+      fetch(getApiUrl("/api/personality-profile"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

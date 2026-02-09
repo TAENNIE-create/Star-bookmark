@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { getCorsHeaders } from "../../../lib/api-cors";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -13,7 +14,12 @@ type VoiceDialogueRequest = {
   messages: Message[];
 };
 
+export function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: getCorsHeaders() });
+}
+
 export async function POST(req: Request) {
+  const headers = getCorsHeaders(req);
   try {
     const body = (await req.json()) as VoiceDialogueRequest;
     const { turnIndex, messages } = body;
@@ -21,14 +27,14 @@ export async function POST(req: Request) {
     if (turnIndex == null || turnIndex < 1 || turnIndex > 4) {
       return NextResponse.json(
         { error: "turnIndex는 1~4 사이여야 합니다." },
-        { status: 400 }
+        { status: 400, headers }
       );
     }
 
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
         { error: "OpenAI API 키가 설정되어 있지 않습니다." },
-        { status: 500 }
+        { status: 500, headers }
       );
     }
 
@@ -60,16 +66,16 @@ export async function POST(req: Request) {
     if (!reply) {
       return NextResponse.json(
         { error: "별지기 답변을 생성할 수 없습니다." },
-        { status: 500 }
+        { status: 500, headers }
       );
     }
 
-    return NextResponse.json({ reply });
+    return NextResponse.json({ reply }, { headers });
   } catch (error) {
     console.error("[VOICE_DIALOGUE_ERROR]", error);
     return NextResponse.json(
       { error: "별지기 답변 생성 중 오류가 발생했습니다." },
-      { status: 500 }
+      { status: 500, headers }
     );
   }
 }

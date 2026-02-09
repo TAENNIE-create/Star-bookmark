@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { getCorsHeaders } from "../../../lib/api-cors";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -12,7 +13,12 @@ type ExpandToDiaryRequest = {
   interviewAnswers?: Array< { question: string; answer: string } >;
 };
 
+export function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: getCorsHeaders() });
+}
+
 export async function POST(req: Request) {
+  const headers = getCorsHeaders(req);
   try {
     const body = (await req.json()) as ExpandToDiaryRequest;
     const interviewAnswers = body.interviewAnswers;
@@ -25,14 +31,14 @@ export async function POST(req: Request) {
     if (!useInterview && !useLegacy) {
       return NextResponse.json(
         { error: "shortAnswer 또는 interviewAnswers가 필요합니다." },
-        { status: 400 }
+        { status: 400, headers }
       );
     }
 
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
         { error: "OpenAI API 키가 설정되어 있지 않습니다." },
-        { status: 500 }
+        { status: 500, headers }
       );
     }
 
@@ -70,16 +76,16 @@ export async function POST(req: Request) {
     if (!diary) {
       return NextResponse.json(
         { error: "일기를 생성할 수 없습니다." },
-        { status: 500 }
+        { status: 500, headers }
       );
     }
 
-    return NextResponse.json({ diary });
+    return NextResponse.json({ diary }, { headers });
   } catch (error) {
     console.error("[EXPAND_TO_DIARY_ERROR]", error);
     return NextResponse.json(
       { error: "일기 확장 중 오류가 발생했습니다." },
-      { status: 500 }
+      { status: 500, headers }
     );
   }
 }

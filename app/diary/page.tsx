@@ -6,6 +6,7 @@ import { motion, PanInfo, AnimatePresence } from "framer-motion";
 import { TabBar, type TabKey } from "../../components/arisum/tab-bar";
 import type { MoodScores } from "../../lib/arisum-types";
 import { MIDNIGHT_BLUE, MUTED, CARD_BG, LU_ICON } from "../../lib/theme";
+import { getApiUrl } from "../../lib/api-client";
 import { getLuBalance, subtractLu, addLu, LU_DAILY_REPORT_UNLOCK, LU_REANALYZE } from "../../lib/lu-balance";
 import { getMembershipTier, MEMBERSHIP_ACCESS_DAYS, isDateAccessible, getRequiredShards } from "../../lib/economy";
 import { getUnlockedMonths } from "../../lib/archive-unlock";
@@ -339,7 +340,7 @@ function DiaryCalendarContent() {
     });
   };
 
-  /** 별조각 차감 후 해당 날짜에 대해 analyze API 호출 및 결과 저장 (멤버십 할인 적용) */
+  /** 해당 날짜에 대해 analyze API 호출 성공 시에만 별조각 차감 (원자적 동작) */
   const runUnlockAnalyze = async (dateKey: string) => {
     const cost = getRequiredShards(tier, "daily_analysis");
     const lu = getLuBalance();
@@ -349,15 +350,10 @@ function DiaryCalendarContent() {
       }
       return;
     }
-    if (!subtractLu(cost)) return;
-    window.dispatchEvent(new Event("lu-balance-updated"));
 
     const data = journals;
     const entries = data[dateKey] ?? [];
-    if (entries.length === 0) {
-      addLu(cost);
-      return;
-    }
+    if (entries.length === 0) return;
 
     setIsLoadingReport(true);
     const journalTexts = entries.map((e) => e.content);
@@ -386,7 +382,7 @@ function DiaryCalendarContent() {
         isDateAccessible(d, accessDays, unlockedMonths)
       );
 
-      const analyzeRes = await fetch("/api/analyze", {
+      const analyzeRes = await fetch(getApiUrl("/api/analyze"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -400,12 +396,14 @@ function DiaryCalendarContent() {
         }),
       });
 
-      if (!analyzeRes.ok) {
-        addLu(cost);
-        throw new Error("분석 실패");
-      }
+      if (!analyzeRes.ok) throw new Error("분석 실패");
 
       const analyzeData = await analyzeRes.json();
+      if (!subtractLu(cost)) {
+        setIsLoadingReport(false);
+        return;
+      }
+      window.dispatchEvent(new Event("lu-balance-updated"));
       const todayFlow = analyzeData.todayFlow ?? null;
       const gardenerWord = analyzeData.gardenerWord ?? null;
       const growthSeeds = Array.isArray(analyzeData.growthSeeds) ? analyzeData.growthSeeds : [];
@@ -523,10 +521,7 @@ function DiaryCalendarContent() {
     if (!selectedDate || isReanalyzing) return;
     const reCost = getRequiredShards(tier, "re_analysis");
     const lu = getLuBalance();
-    if (lu < reCost) {
-      return; // "별조각이 부족해요" - modal에서 처리
-    }
-    if (!subtractLu(reCost)) return;
+    if (lu < reCost) return;
     setShowReanalyzeModal(false);
     setIsReanalyzing(true);
     try {
@@ -535,7 +530,7 @@ function DiaryCalendarContent() {
         .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
       const journalTexts = entries.map((e) => e.content.trim()).filter(Boolean);
       if (journalTexts.length === 0) {
-        addLu(reCost); // 환불
+        setIsReanalyzing(false);
         return;
       }
       const user_identity_summary =
@@ -560,7 +555,7 @@ function DiaryCalendarContent() {
       const existingStarDatesRe = allStarDatesRe.filter((d) =>
         isDateAccessible(d, accessDays, unlockedMonths)
       );
-      const res = await fetch("/api/analyze", {
+      const res = await fetch(getApiUrl("/api/analyze"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -581,6 +576,11 @@ function DiaryCalendarContent() {
       });
       if (!res.ok) throw new Error("분석 실패");
       const analyzeData = await res.json();
+      if (!subtractLu(reCost)) {
+        setIsReanalyzing(false);
+        return;
+      }
+      window.dispatchEvent(new Event("lu-balance-updated"));
       const todayFlow = analyzeData.todayFlow ?? null;
       const gardenerWord = analyzeData.gardenerWord ?? null;
       const growthSeeds = Array.isArray(analyzeData.growthSeeds) ? analyzeData.growthSeeds : [];
@@ -686,7 +686,7 @@ function DiaryCalendarContent() {
       window.dispatchEvent(new Event("report-updated"));
       window.dispatchEvent(new Event("journal-updated"));
     } catch {
-      addLu(reCost); // 실패 시 환불
+      // 별조각은 성공 시에만 차감했으므로 실패 시 환불 불필요
     } finally {
       setIsReanalyzing(false);
     }
@@ -694,6 +694,8 @@ function DiaryCalendarContent() {
 
   const tier = getMembershipTier();
   const accessDays = MEMBERSHIP_ACCESS_DAYS[tier];
+  const costDaily = getRequiredShards(tier, "daily_analysis");
+  const costRe = getRequiredShards(tier, "re_analysis");
   const unlockedMonths = getUnlockedMonths();
 
   /** 첫 클릭: 날짜 선택 + 하단 리포트 표시. 봉인된 날짜 클릭 시 해금 유도 팝업 */
