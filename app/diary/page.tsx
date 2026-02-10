@@ -12,7 +12,7 @@ import { getMembershipTier, MEMBERSHIP_ACCESS_DAYS, isDateAccessible, getRequire
 import { getUnlockedMonths } from "../../lib/archive-unlock";
 import { getUserName } from "../../lib/home-greeting";
 import { getQuestsForDate, setQuestsForDate } from "../../lib/quest-storage";
-import { getCurrentConstellation, mergeAtlasWithNewStar, setCurrentConstellation, setActiveConstellations } from "../../lib/atlas-storage";
+import { getCurrentConstellation, mergeAtlasWithNewStar, setCurrentConstellation, setActiveConstellations, type ActiveConstellation, type CurrentConstellation } from "../../lib/atlas-storage";
 import { getAppStorage } from "../../lib/app-storage";
 import { LoadingOverlay } from "../../components/arisum/loading-overlay";
 import { openStoreModal } from "../../components/arisum/store-modal-provider";
@@ -464,7 +464,7 @@ function DiaryCalendarContent() {
         try {
           const toSave = ad.identityArchive ?? { summary: ad.updatedSummary ?? "", traitCounts: {}, confirmedTraits: {} };
           getAppStorage().setItem("user_identity_summary", typeof toSave === "string" ? toSave : JSON.stringify(toSave));
-          const metrics: MoodScores = ad.metrics ?? ad.scores ?? {};
+          const metrics = (ad.metrics ?? ad.scores ?? {}) as MoodScores;
           if (metrics && Object.keys(metrics).length > 0) {
             getAppStorage().setItem("arisum-latest-scores", JSON.stringify({ date: dateKey, scores: metrics }));
             const historyRaw = getAppStorage().getItem("arisum-scores-history");
@@ -495,20 +495,20 @@ function DiaryCalendarContent() {
               JSON.stringify({ keywords: ad.keywords, counselorLetter: ad.counselorLetter })
             );
           }
-          if (ad.starPosition && ad.keywords) {
+          if (ad.starPosition && keywords) {
             const combinedText = getCombinedJournalText(dateKey, data);
             mergeAtlasWithNewStar(
               dateKey,
               ad.starPosition,
-              ad.keywords,
+              keywords,
               ad.starConnections ?? [],
               combinedText.length
             );
           }
           if (Array.isArray(ad.currentConstellations) && ad.currentConstellations.length > 0) {
-            setActiveConstellations(ad.currentConstellations);
+            setActiveConstellations(ad.currentConstellations as ActiveConstellation[]);
           } else if (ad.currentConstellation) {
-            setCurrentConstellation(ad.currentConstellation);
+            setCurrentConstellation(ad.currentConstellation as CurrentConstellation);
           }
           if (ad.newlyConfirmedTrait) {
             setTraitConfirmPopup({
@@ -518,11 +518,11 @@ function DiaryCalendarContent() {
               closing: ad.newlyConfirmedTrait.closing,
             });
           }
-          const newArchive = ad.identityArchive;
+          const newArchive = ad.identityArchive as { traitCounts?: Record<string, number>; confirmedTraits?: Array<{ traitId: string; label: string }> } | undefined;
           if (newArchive && typeof newArchive === "object" && Array.isArray(newArchive.confirmedTraits)) {
-            const newCounts = (newArchive as { traitCounts?: Record<string, number> }).traitCounts ?? {};
+            const newCounts = newArchive.traitCounts ?? {};
             const oldCounts = previousArchive.traitCounts ?? {};
-            for (const t of newArchive.confirmedTraits as Array<{ traitId: string; label: string }>) {
+            for (const t of newArchive.confirmedTraits) {
               const oldC = oldCounts[t.traitId] ?? 0;
               const newC = newCounts[t.traitId] ?? 0;
               const oldL = getTraitLevel(oldC);
@@ -694,7 +694,7 @@ function DiaryCalendarContent() {
         try {
           const toSave = adRe.identityArchive ?? { summary: adRe.updatedSummary ?? "", traitCounts: {}, confirmedTraits: {} };
           getAppStorage().setItem("user_identity_summary", typeof toSave === "string" ? toSave : JSON.stringify(toSave));
-          const metrics: MoodScores = adRe.metrics ?? adRe.scores ?? {};
+          const metrics = (adRe.metrics ?? adRe.scores ?? {}) as MoodScores;
           if (metrics && Object.keys(metrics).length > 0) {
             getAppStorage().setItem(
               "arisum-latest-scores",
@@ -714,20 +714,20 @@ function DiaryCalendarContent() {
               })
             );
           }
-          if (adRe.starPosition && adRe.keywords) {
+          if (adRe.starPosition && keywords) {
             const combinedTextRe = getCombinedJournalText(selectedDate, journals);
             mergeAtlasWithNewStar(
               selectedDate,
               adRe.starPosition,
-              adRe.keywords,
+              keywords,
               adRe.starConnections ?? [],
               combinedTextRe.length
             );
           }
           if (Array.isArray(adRe.currentConstellations) && adRe.currentConstellations.length > 0) {
-            setActiveConstellations(adRe.currentConstellations);
+            setActiveConstellations(adRe.currentConstellations as ActiveConstellation[]);
           } else if (adRe.currentConstellation) {
-            setCurrentConstellation(adRe.currentConstellation);
+            setCurrentConstellation(adRe.currentConstellation as CurrentConstellation);
           }
           if (adRe.newlyConfirmedTrait) {
             setTraitConfirmPopup({
@@ -737,11 +737,11 @@ function DiaryCalendarContent() {
               closing: adRe.newlyConfirmedTrait.closing,
             });
           }
-          const newArchiveRe = adRe.identityArchive;
+          const newArchiveRe = adRe.identityArchive as { traitCounts?: Record<string, number>; confirmedTraits?: Array<{ traitId: string; label: string }> } | undefined;
           if (newArchiveRe && typeof newArchiveRe === "object" && Array.isArray(newArchiveRe.confirmedTraits)) {
-            const newCountsRe = (newArchiveRe as { traitCounts?: Record<string, number> }).traitCounts ?? {};
+            const newCountsRe = newArchiveRe.traitCounts ?? {};
             const oldCountsRe = previousArchiveRe.traitCounts ?? {};
-            for (const t of newArchiveRe.confirmedTraits as Array<{ traitId: string; label: string }>) {
+            for (const t of newArchiveRe.confirmedTraits) {
               const oldC = oldCountsRe[t.traitId] ?? 0;
               const newC = newCountsRe[t.traitId] ?? 0;
               const oldL = getTraitLevel(oldC);
