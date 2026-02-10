@@ -1331,7 +1331,7 @@ function DiaryCalendarContent() {
               if (!canUnlock) return;
               if (!subtractLu(COST_PERMANENT_MEMORY_KEY)) return;
               const months = getUnlockedMonths();
-              if (!months.includes(yearMonth)) setUnlockedMonths([...months, yearMonth]);
+              if (!months.has(yearMonth)) setUnlockedMonths(new Set([...months, yearMonth]));
               window.dispatchEvent(new Event("lu-balance-updated"));
               setSealedDateKey(null);
             };

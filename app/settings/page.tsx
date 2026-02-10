@@ -45,7 +45,7 @@ export default function SettingsPage() {
   const router = useRouter();
   const [nickname, setNickname] = useState("");
   const [saved, setSaved] = useState(false);
-  const [user, setUser] = useState<{ email?: string } | null>(null);
+  const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
   const [reminderTime, setReminderTime] = useState<string>("22:00");
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
@@ -110,7 +110,7 @@ export default function SettingsPage() {
               }
             }
           })
-          .catch(() => {
+          .then(undefined, () => {
             const raw = getAppStorage().getItem(ONBOARDING_KEY);
             if (raw) {
               const parsed = JSON.parse(raw) as Stored;
