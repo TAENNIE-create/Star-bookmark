@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "../../../lib/supabase/server";
-import { getCorsHeaders } from "../../../lib/api-cors";
+import { getCorsHeaders, CORS_HEADERS_FULL } from "../../../lib/api-cors";
 
 /** OPTIONS: CORS preflight */
 export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: getCorsHeaders() });
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS_FULL });
 }
 
 /**
@@ -15,7 +15,7 @@ export async function OPTIONS() {
  * (Capacitor 앱에서는 쿠키가 API 도메인으로 안 가므로 Bearer 토큰 사용)
  */
 export async function POST(req: Request) {
-  const headers = getCorsHeaders(req);
+  const headers = { ...getCorsHeaders(req), ...CORS_HEADERS_FULL };
   try {
     let userId: string | null = null;
 
@@ -79,7 +79,7 @@ export async function POST(req: Request) {
 
     return new NextResponse(null, { status: 204, headers });
   } catch (e) {
-    console.error("[delete-account]", e);
+    console.log("Delete Account Error:", e);
     return NextResponse.json(
       { error: "계정 삭제 중 오류가 발생했습니다." },
       { status: 500, headers }

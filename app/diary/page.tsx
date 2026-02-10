@@ -405,7 +405,11 @@ function DiaryCalendarContent() {
       } catch (fetchErr) {
         const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
         console.error("[일기 해금 분석] fetch 실패:", { code: "NETWORK_ERROR", message: msg, url: analyzeUrl }, fetchErr);
-        throw fetchErr;
+        setIsLoadingReport(false);
+        setAnalysisErrorMessage(
+          "연결할 수 없어요. API 서버가 배포되어 있는지, 네트워크를 확인해 주세요."
+        );
+        return;
       }
 
       if (!analyzeRes.ok) {
@@ -416,13 +420,28 @@ function DiaryCalendarContent() {
         } catch {
           bodyText = "(응답 본문 읽기 실패)";
         }
+        let serverMessage = "";
+        try {
+          const parsed = JSON.parse(bodyText) as { error?: string };
+          if (typeof parsed?.error === "string") serverMessage = parsed.error;
+        } catch {
+          serverMessage = bodyText?.slice(0, 150) || analyzeRes.statusText;
+        }
         console.error("[일기 해금 분석] API 오류:", {
           status,
           statusText: analyzeRes.statusText,
           message: bodyText?.slice(0, 200) ?? "",
           url: analyzeUrl,
         });
-        throw new Error(`분석 실패: ${status} ${analyzeRes.statusText}`);
+        setIsLoadingReport(false);
+        setAnalysisErrorMessage(
+          serverMessage
+            ? `서버: ${serverMessage}`
+            : status === 404
+              ? "분석 API를 찾을 수 없어요. API 서버 배포 여부를 확인해 주세요."
+              : "잠시 별지기가 멀리 있어요. 네트워크를 확인해 주시거나 잠시 후 다시 불러 주세요."
+        );
+        return;
       }
 
       let analyzeData: unknown;
@@ -639,8 +658,21 @@ function DiaryCalendarContent() {
         } catch {
           bodyText = "(응답 본문 읽기 실패)";
         }
+        let serverMessage = "";
+        try {
+          const parsed = JSON.parse(bodyText) as { error?: string };
+          if (typeof parsed?.error === "string") serverMessage = parsed.error;
+        } catch {
+          serverMessage = bodyText?.slice(0, 150) || res.statusText;
+        }
         console.error("[다시 분석] API 오류:", { status: res.status, statusText: res.statusText, message: bodyText?.slice(0, 200) ?? "", url: analyzeUrlRe });
-        setAnalysisErrorMessage("잠시 별지기가 멀리 있어요. 네트워크를 확인해 주시거나 잠시 후 다시 불러 주세요.");
+        setAnalysisErrorMessage(
+          serverMessage
+            ? `서버: ${serverMessage}`
+            : res.status === 404
+              ? "분석 API를 찾을 수 없어요. API 서버 배포 여부를 확인해 주세요."
+              : "잠시 별지기가 멀리 있어요. 네트워크를 확인해 주시거나 잠시 후 다시 불러 주세요."
+        );
         setIsReanalyzing(false);
         return;
       }

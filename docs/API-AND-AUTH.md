@@ -13,6 +13,24 @@
 
 **참고:** 이 프로젝트는 `output: "export"`로 정적 빌드하므로, API 라우트(`app/api/.../route.ts`)는 **별도 서버**(Netlify Functions, Node 서버 등)에서 실행해야 합니다. 그 서버 URL을 `NEXT_PUBLIC_API_BASE_URL`에 넣으면 됩니다.
 
+### AI 분석이 전혀 동작하지 않을 때
+
+1. **API가 실제로 호출되는 서버에 배포되어 있는지**
+   - 정적 빌드(`output: "export"`)에서는 **같은 빌드에 API 라우트가 포함되지 않습니다.**
+   - `NEXT_PUBLIC_API_BASE_URL`(예: `https://star-bookmark.netlify.app`)에 **API를 제공하는 서버**가 떠 있어야 합니다.
+   - Netlify에 **정적 사이트만** 올려 두었다면 `/api/analyze` 요청은 **404**가 납니다.  
+     → Netlify Functions로 API를 배포했는지, 또는 Next.js를 서버 모드로 배포했는지 확인하세요.
+
+2. **API 서버 환경 변수에 `OPENAI_API_KEY`가 설정되어 있는지**
+   - 분석 API(`/api/analyze`)는 서버에서 `process.env.OPENAI_API_KEY`를 사용합니다.
+   - `.env.local`의 키는 **로컬에서만** 쓰입니다. Netlify(또는 실제 API가 돌아가는 곳) **대시보드 → Site settings → Environment variables**에 `OPENAI_API_KEY`를 넣어야 합니다.
+   - 키가 없으면 API가 500을 반환하고, 본문에 `"OpenAI API 키가 설정되어 있지 않습니다."` 같은 메시지가 담깁니다.
+
+3. **앱에서 에러 메시지 확인**
+   - 분석 실패 시 화면에 안내 문구와 함께 **서버에서 내려준 에러 메시지**가 보이도록 되어 있습니다.  
+     (예: "OpenAI API 키가 설정되어 있지 않습니다.")  
+   - 네트워크 오류(연결 실패)면 API 서버 URL/네트워크를, 404면 API 배포 여부를, 500이면 서버 로그/환경 변수를 확인하면 됩니다.
+
 ---
 
 ## 2. 로그인 리다이렉트 (구글/카카오)

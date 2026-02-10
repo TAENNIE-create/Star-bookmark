@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { SKY_WHITE, MIDNIGHT_BLUE, LU_ICON } from "../../lib/theme";
-import { type MembershipTier, COST_PERMANENT_MEMORY_KEY } from "../../lib/economy";
+import { type MembershipTier } from "../../lib/economy";
 import {
   getProductIdForMembershipTier,
   isShardProduct,
@@ -33,11 +33,12 @@ const UNIFIED_STORE_ITEMS: Array<
     type: "membership",
     tier: "CHRONICLE",
     price: 7400,
-    name: "은하 멤버십",
+    name: "정기 구독권",
     benefits: [
       "가입 시점부터 모든 기록 상시 열람",
-      "퀘스트 보상 2배 (1회 20✦, 하루 최대 60)",
-      "데일리 15 / 재분석 7 / 월간 200 별조각",
+      "퀘스트 보상 2배 적립",
+      "분석 비용 50% 할인",
+      "더욱 쾌적한 별의 여정을 맞이해보세요!",
     ],
   },
   { type: "shards", id: "shards_600", amount: 600, price: 6900, name: "600 별조각" },
@@ -322,9 +323,6 @@ export function StoreModal({ open, onClose }: StoreModalProps) {
                     </motion.div>
                   );
                 })}
-                <p className="text-xs font-a2z-r pt-2" style={{ color: SILVER_BLUE }}>
-                  기억의 열쇠(특정 달 영구 해금)는 {COST_PERMANENT_MEMORY_KEY} 별조각입니다. 기록함에서 해금할 수 있습니다.
-                </p>
           </div>
 
           {/* 정식 출시 전 안내 팝업: 직계 자식이 아닌 내부 노드로 두어 duplicate key 방지 */}

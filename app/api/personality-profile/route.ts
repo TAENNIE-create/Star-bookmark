@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import { getCorsHeaders } from "../../../lib/api-cors";
+import { getCorsHeaders, CORS_HEADERS_FULL } from "../../../lib/api-cors";
 import {
   TRAIT_CATEGORY_ORDER,
   TRAIT_CATEGORY_LABELS,
@@ -195,11 +195,11 @@ async function generateActiveTraitsCopyForPeriod(params: {
 }
 
 export function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: getCorsHeaders() });
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS_FULL });
 }
 
 export async function POST(req: Request) {
-  const headers = getCorsHeaders(req);
+  const headers = { ...getCorsHeaders(req), ...CORS_HEADERS_FULL };
   try {
     const body = (await req.json()) as {
       identityArchiveRaw?: string | null;
@@ -369,7 +369,7 @@ export async function POST(req: Request) {
       { headers }
     );
   } catch (error) {
-    console.error("[PERSONALITY_PROFILE_ERROR]", error);
+    console.log("Personality Profile Error:", error);
     return NextResponse.json(
       {
         confirmedCards: [],

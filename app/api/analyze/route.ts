@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import { getCorsHeaders } from "../../../lib/api-cors";
+import { getCorsHeaders, CORS_HEADERS_FULL } from "../../../lib/api-cors";
 import type { MoodScores } from "../../../lib/arisum-types";
 import { MOOD_SCORE_KEYS } from "../../../lib/arisum-types";
 import { TRAITS, TRAIT_CATEGORY_ORDER } from "../../../constants/traits";
@@ -67,17 +67,12 @@ type AnalyzeResponse = {
   newlyConfirmedTrait?: { traitId: string; label: string; opening: string; body: string; closing: string };
 };
 
-const CORS_HEADERS = {
-  ...getCorsHeaders(),
-  "Access-Control-Allow-Origin": "*",
-};
-
 export function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS_FULL });
 }
 
 export async function POST(req: Request) {
-  const headers = { ...getCorsHeaders(req), "Access-Control-Allow-Origin": "*" };
+  const headers = { ...getCorsHeaders(req), ...CORS_HEADERS_FULL };
   try {
     const body = (await req.json()) as AnalyzeRequest;
     const journal = body.journal?.trim();
@@ -101,7 +96,7 @@ export async function POST(req: Request) {
 
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
-        { error: "OpenAI API 키가 설정되어 있지 않습니다." },
+        { error: "서버 환경변수에 OPENAI_API_KEY를 등록하세요." },
         { status: 500, headers }
       );
     }
@@ -525,7 +520,7 @@ JSON만 출력. 형식: {"constellations":[{"id":"c1","name":"...","meaning":"..
       { headers }
     );
   } catch (error) {
-    console.error("[ANALYZE_ERROR]", error);
+    console.log("Analyze Error:", error);
 
     const err = error as {
       status?: number;

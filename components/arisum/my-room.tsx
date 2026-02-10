@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { motion } from "framer-motion";
 import { getCurrentConstellation } from "../../lib/atlas-storage";
 import { getAppStorage } from "../../lib/app-storage";
@@ -145,8 +145,12 @@ export function MyRoom({ keywords: _keywordsProp }: MyRoomProps) {
   }
 
   const particles = getParticlePositions(28);
-  const ORBIT_RADIUS_MIN = 44;
-  const ORBIT_RADIUS_MAX = 72;
+  const orbitContainerRef = useRef<HTMLDivElement>(null);
+  const [orbitBoxHeight, setOrbitBoxHeight] = useState(200);
+  const ORBIT_HEIGHT_RATIO = 0.38;
+  const maxRadiusByHeight = Math.max(24, Math.min(72, orbitBoxHeight * ORBIT_HEIGHT_RATIO));
+  const ORBIT_RADIUS_MIN = Math.round(maxRadiusByHeight * 0.55);
+  const ORBIT_RADIUS_MAX = Math.round(maxRadiusByHeight);
   const charCounts = orbitingStars.map((s) => s.charCount);
   const minChar = charCounts.length > 0 ? Math.min(...charCounts) : 0;
   const maxChar = charCounts.length > 0 ? Math.max(...charCounts) : 1;
@@ -156,24 +160,37 @@ export function MyRoom({ keywords: _keywordsProp }: MyRoomProps) {
     return ORBIT_RADIUS_MAX - t * (ORBIT_RADIUS_MAX - ORBIT_RADIUS_MIN);
   }
 
+  useEffect(() => {
+    if (!mounted || !orbitContainerRef.current) return;
+    const el = orbitContainerRef.current;
+    const ro = new ResizeObserver((entries) => {
+      const { height } = entries[0]?.contentRect ?? { height: 200 };
+      setOrbitBoxHeight(height);
+    });
+    ro.observe(el);
+    setOrbitBoxHeight(el.getBoundingClientRect().height);
+    return () => ro.disconnect();
+  }, [mounted]);
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.6 }}
-      className="relative overflow-hidden w-full min-h-[42vh] flex flex-col rounded-2xl"
+      className="relative overflow-hidden w-full min-h-[42vh] flex flex-col rounded-2xl p-8"
       style={{
         background: NEBULA_BG,
-        boxShadow: "0 8px 32px rgba(10, 14, 26, 0.4), 0 2px 8px rgba(10, 14, 26, 0.2)",
+        boxShadow:
+          "0 8px 32px rgba(10, 14, 26, 0.4), 0 2px 8px rgba(10, 14, 26, 0.2), inset 0 0 80px 20px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255,255,255,0.04)",
         border: "1px solid rgba(255, 255, 255, 0.08)",
       }}
     >
-      {/* Nebula radial gradient */}
+      {/* Nebula radial: 중심 밝고 가장자리로 갈수록 깊은 우주 */}
       <div
         className="absolute inset-0 pointer-events-none rounded-2xl"
         style={{
           background:
-            "radial-gradient(ellipse 90% 80% at 50% 40%, rgba(100, 116, 139, 0.15) 0%, rgba(71, 85, 105, 0.06) 40%, transparent 70%)",
+            "radial-gradient(ellipse 85% 75% at 50% 50%, rgba(100, 116, 139, 0.18) 0%, rgba(71, 85, 105, 0.08) 35%, rgba(30, 41, 59, 0.03) 60%, transparent 75%), linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.25) 100%)",
         }}
       />
 
@@ -200,99 +217,111 @@ export function MyRoom({ keywords: _keywordsProp }: MyRoomProps) {
         ))}
       </div>
 
-      {/* Orbit system: 남은 높이 채우며 최소 200px */}
-      <div className="relative flex flex-1 items-center justify-center w-full min-h-[200px]">
-        {/* Orbiting stars */}
-        {orbitingStars.map((star, i) => {
-          const duration = 24 + (i % 5) * 4;
-          const r = radiusForStar(star.charCount);
-          const rad = (star.angle * Math.PI) / 180;
-          const starX = ORBIT_RADIUS_MAX + Math.cos(rad) * r - 4;
-          const starY = ORBIT_RADIUS_MAX + Math.sin(rad) * r - 4;
-          const boxSize = ORBIT_RADIUS_MAX * 2;
-          return (
-            <motion.div
-              key={star.dateKey}
-              className="absolute"
-              style={{
-                width: boxSize,
-                height: boxSize,
-                left: "50%",
-                top: "50%",
-                marginLeft: -ORBIT_RADIUS_MAX,
-                marginTop: -ORBIT_RADIUS_MAX,
-              }}
-              animate={{ rotate: 360 }}
-              transition={{
-                duration,
-                repeat: Infinity,
-                ease: "linear",
-              }}
-            >
-              <div
-                className="absolute flex flex-col items-center"
+      {/* Orbit system: 높이 기준 반지름 제한, 정확히 중앙 정렬 */}
+      <div
+        ref={orbitContainerRef}
+        className="relative flex flex-1 items-center justify-center w-full min-h-[200px]"
+      >
+        {/* 궤도 + 태양이 들어가는 정사각 영역 (반지름의 2배, 진짜 중앙에 배치) */}
+        <div
+          className="absolute"
+          style={{
+            width: ORBIT_RADIUS_MAX * 2,
+            height: ORBIT_RADIUS_MAX * 2,
+            left: "50%",
+            top: "50%",
+            transform: "translate(-50%, -50%)",
+          }}
+        >
+          {/* Orbiting stars */}
+          {orbitingStars.map((star, i) => {
+            const duration = 24 + (i % 5) * 4;
+            const r = radiusForStar(star.charCount);
+            const rad = (star.angle * Math.PI) / 180;
+            const starX = ORBIT_RADIUS_MAX + Math.cos(rad) * r - 4;
+            const starY = ORBIT_RADIUS_MAX + Math.sin(rad) * r - 4;
+            const boxSize = ORBIT_RADIUS_MAX * 2;
+            return (
+              <motion.div
+                key={star.dateKey}
+                className="absolute"
                 style={{
-                  left: starX,
-                  top: starY,
-                  width: 8,
-                  height: 8,
+                  width: boxSize,
+                  height: boxSize,
+                  left: 0,
+                  top: 0,
+                }}
+                animate={{ rotate: 360 }}
+                transition={{
+                  duration,
+                  repeat: Infinity,
+                  ease: "linear",
                 }}
               >
                 <div
-                  className="absolute rounded-full bg-amber-300/90"
+                  className="absolute flex flex-col items-center"
                   style={{
-                    width: 6,
-                    height: 6,
-                    left: 1,
-                    top: 1,
-                    boxShadow: "0 0 8px rgba(253, 230, 138, 0.8)",
-                  }}
-                />
-                <motion.span
-                  className="absolute max-w-[72px] text-[9px] font-normal text-amber-200/90 -translate-x-1/2 -translate-y-full -top-1 left-1/2 text-center break-words"
-                  style={{ fontFamily: "var(--font-a2z-r), sans-serif" }}
-                  animate={{ rotate: -360 }}
-                  transition={{
-                    duration,
-                    repeat: Infinity,
-                    ease: "linear",
+                    left: starX,
+                    top: starY,
+                    width: 8,
+                    height: 8,
                   }}
                 >
-                  {star.keyword}
-                </motion.span>
-              </div>
-            </motion.div>
-          );
-        })}
+                  <div
+                    className="absolute rounded-full bg-amber-300/90"
+                    style={{
+                      width: 6,
+                      height: 6,
+                      left: 1,
+                      top: 1,
+                      boxShadow: "0 0 8px rgba(253, 230, 138, 0.8)",
+                    }}
+                  />
+                  <motion.span
+                    className="absolute max-w-[72px] text-[9px] font-normal text-amber-200/90 -translate-x-1/2 -translate-y-full -top-1 left-1/2 text-center break-words"
+                    style={{ fontFamily: "var(--font-a2z-r), sans-serif" }}
+                    animate={{ rotate: -360 }}
+                    transition={{
+                      duration,
+                      repeat: Infinity,
+                      ease: "linear",
+                    }}
+                  >
+                    {star.keyword}
+                  </motion.span>
+                </div>
+              </motion.div>
+            );
+          })}
 
-        {/* Sun Star (The Core) */}
-        <motion.div
-          className="absolute z-10 rounded-full"
-          style={{
-            width: 20,
-            height: 20,
-            left: "50%",
-            top: "50%",
-            marginLeft: -10,
-            marginTop: -10,
-            background: "radial-gradient(circle, #FDE68A 0%, #F59E0B 50%, #D97706 100%)",
-            boxShadow: "0 0 20px rgba(253, 230, 138, 0.9), 0 0 40px rgba(251, 191, 36, 0.5)",
-          }}
-          animate={{
-            scale: [1, 1.15, 1],
-            opacity: [0.95, 1, 0.95],
-            boxShadow: [
-              "0 0 20px rgba(253, 230, 138, 0.9), 0 0 40px rgba(251, 191, 36, 0.5)",
-              "0 0 28px rgba(253, 230, 138, 1), 0 0 56px rgba(251, 191, 36, 0.7)",
-              "0 0 20px rgba(253, 230, 138, 0.9), 0 0 40px rgba(251, 191, 36, 0.5)",
-            ],
-          }}
-          transition={{
-            duration: 2.5,
-            repeat: Infinity,
-            ease: "easeInOut",
-          }}
-        />
+          {/* Sun Star (The Core) – 박스 내 정확히 가로/세로 중앙 */}
+          <motion.div
+            className="absolute z-10 rounded-full"
+            style={{
+              width: 20,
+              height: 20,
+              left: "50%",
+              top: "50%",
+              transform: "translate(-50%, -50%)",
+              background: "radial-gradient(circle, #FDE68A 0%, #F59E0B 50%, #D97706 100%)",
+              boxShadow: "0 0 20px rgba(253, 230, 138, 0.9), 0 0 40px rgba(251, 191, 36, 0.5)",
+            }}
+            animate={{
+              scale: [1, 1.15, 1],
+              opacity: [0.95, 1, 0.95],
+              boxShadow: [
+                "0 0 20px rgba(253, 230, 138, 0.9), 0 0 40px rgba(251, 191, 36, 0.5)",
+                "0 0 28px rgba(253, 230, 138, 1), 0 0 56px rgba(251, 191, 36, 0.7)",
+                "0 0 20px rgba(253, 230, 138, 0.9), 0 0 40px rgba(251, 191, 36, 0.5)",
+              ],
+            }}
+            transition={{
+              duration: 2.5,
+              repeat: Infinity,
+              ease: "easeInOut",
+            }}
+          />
+        </div>
       </div>
 
       {/* Info overlay */}

@@ -18,12 +18,12 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Supabase OAuth 리다이렉트: com.starbookmark.app:// 가로채기 -->
-            <intent-filter>
+            <!-- Supabase OAuth 리다이렉트: com.starbookmark.app://login-callback 완벽 인식 -->
+            <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="com.starbookmark.app" />
+                <data android:scheme="com.starbookmark.app" android:host="login-callback" />
             </intent-filter>
         </activity>
 

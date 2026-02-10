@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import { getCorsHeaders } from "../../../lib/api-cors";
+import { getCorsHeaders, CORS_HEADERS_FULL } from "../../../lib/api-cors";
 import type { MoodScores } from "../../../lib/arisum-types";
 import { DEFAULT_MOOD_SCORES } from "../../../lib/arisum-types";
 
@@ -158,11 +158,11 @@ function buildConnections(
 }
 
 export function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: getCorsHeaders() });
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS_FULL });
 }
 
 export async function POST(req: Request) {
-  const headers = getCorsHeaders(req);
+  const headers = { ...getCorsHeaders(req), ...CORS_HEADERS_FULL };
   try {
     const body = (await req.json()) as ConstellationsRequest;
     const scoresHistory = body.scoresHistory ?? {};
@@ -339,7 +339,7 @@ export async function POST(req: Request) {
       { headers }
     );
   } catch (error) {
-    console.error("[CONSTELLATIONS_ERROR]", error);
+    console.log("Constellations Error:", error);
     return NextResponse.json(
       { error: "별자리를 불러오는 중 오류가 발생했습니다." },
       { status: 500, headers }

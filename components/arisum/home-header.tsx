@@ -42,9 +42,15 @@ export function HomeHeader() {
 
   useEffect(() => {
     const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => setIsGuest(!data?.user));
+    const updateGuest = () => supabase.auth.getUser().then(({ data }) => setIsGuest(!data?.user));
+    updateGuest();
     const unsub = supabase.auth.onAuthStateChange((_e, session) => setIsGuest(!session?.user));
-    return () => unsub.data.subscription.unsubscribe();
+    const onVisible = () => updateGuest();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      unsub.data.subscription.unsubscribe();
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   const dismissTooltip = () => setTooltipDismissed(true);

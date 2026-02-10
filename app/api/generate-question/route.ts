@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import { getCorsHeaders } from "../../../lib/api-cors";
+import { getCorsHeaders, CORS_HEADERS_FULL } from "../../../lib/api-cors";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -16,11 +16,11 @@ type GenerateQuestionRequest = {
 };
 
 export function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: getCorsHeaders() });
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS_FULL });
 }
 
 export async function POST(req: Request) {
-  const headers = getCorsHeaders(req);
+  const headers = { ...getCorsHeaders(req), ...CORS_HEADERS_FULL };
   try {
     const body = (await req.json()) as GenerateQuestionRequest;
     const { seedAnswer, recentJournals } = body;
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
 
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
-        { error: "OpenAI API 키가 설정되어 있지 않습니다." },
+        { error: "서버 환경변수에 OPENAI_API_KEY를 등록하세요." },
         { status: 500, headers }
       );
     }
@@ -81,7 +81,7 @@ ${recentContext || "(아직 저장된 일기가 없습니다.)"}
 
     return NextResponse.json({ question }, { headers });
   } catch (error) {
-    console.error("[GENERATE_QUESTION_ERROR]", error);
+    console.log("Generate Question Error:", error);
 
     const err = error as {
       status?: number;
