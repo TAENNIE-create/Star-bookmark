@@ -104,17 +104,7 @@ export function HomeHeader() {
             <span className="text-sm font-bold tabular-nums">{lu}</span>
           </button>
           <div className="relative flex flex-col items-end">
-            <motion.div
-              className="rounded-2xl flex items-center justify-center ring-2 ring-[#FF6B6B]/80 animate-pulse"
-              animate={{
-                boxShadow: [
-                  `0 0 12px ${CORAL_GLOW}, 0 0 24px rgba(255,107,107,0.25)`,
-                  `0 0 20px ${CORAL_GLOW}, 0 0 40px rgba(255,107,107,0.4)`,
-                  `0 0 12px ${CORAL_GLOW}, 0 0 24px rgba(255,107,107,0.25)`,
-                ],
-              }}
-              transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-            >
+            {isLoggedIn ? (
               <button
                 type="button"
                 onClick={() => router.push("/settings")}
@@ -143,7 +133,48 @@ export function HomeHeader() {
                   <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
                 </svg>
               </button>
-            </motion.div>
+            ) : (
+              <motion.div
+                className="rounded-2xl flex items-center justify-center ring-2 ring-[#FF6B6B]/80 animate-pulse"
+                animate={{
+                  boxShadow: [
+                    `0 0 12px ${CORAL_GLOW}, 0 0 24px rgba(255,107,107,0.25)`,
+                    `0 0 20px ${CORAL_GLOW}, 0 0 40px rgba(255,107,107,0.4)`,
+                    `0 0 12px ${CORAL_GLOW}, 0 0 24px rgba(255,107,107,0.25)`,
+                  ],
+                }}
+                transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+              >
+                <button
+                  type="button"
+                  onClick={() => router.push("/settings")}
+                  className="w-10 h-10 rounded-2xl flex items-center justify-center transition-all duration-200 hover:opacity-90 active:translate-y-0.5 active:shadow-sm focus-visible:ring-2 focus-visible:ring-[#0F172A]/20 focus-visible:ring-offset-2"
+                  style={{
+                    backgroundColor: "rgba(15, 23, 42, 0.08)",
+                    color: MIDNIGHT_BLUE,
+                    boxShadow:
+                      "0 2px 0 rgba(0,0,0,0.06), 0 4px 8px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.5)",
+                    border: "1px solid rgba(255,255,255,0.6)",
+                  }}
+                  aria-label="프로필·설정"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
+                </button>
+              </motion.div>
+            )}
 
             {/* 부유형 말풍선: 로그인 전에만 렌더, position absolute로 레이아웃 여백 없음 */}
             <AnimatePresence>

@@ -1,8 +1,9 @@
 /**
- * API 라우트 CORS: Capacitor/로컬 개발에서 오는 요청 허용
+ * API 라우트 CORS: 서버(star-bookmark)와 안드로이드 앱(capacitor) 요청 허용
  */
 
 const ALLOWED_ORIGINS = [
+  "https://star-bookmark.netlify.app",
   "capacitor://localhost",
   "http://localhost",
   "http://localhost:3000",

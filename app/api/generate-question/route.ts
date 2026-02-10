@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { getCorsHeaders } from "../../../lib/api-cors";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -14,7 +15,12 @@ type GenerateQuestionRequest = {
   }>;
 };
 
+export function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: getCorsHeaders() });
+}
+
 export async function POST(req: Request) {
+  const headers = getCorsHeaders(req);
   try {
     const body = (await req.json()) as GenerateQuestionRequest;
     const { seedAnswer, recentJournals } = body;
@@ -22,14 +28,14 @@ export async function POST(req: Request) {
     if (!seedAnswer?.trim()) {
       return NextResponse.json(
         { error: "seedAnswer는 비어 있을 수 없습니다." },
-        { status: 400 }
+        { status: 400, headers }
       );
     }
 
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
         { error: "OpenAI API 키가 설정되어 있지 않습니다." },
-        { status: 500 }
+        { status: 500, headers }
       );
     }
 
@@ -69,11 +75,11 @@ ${recentContext || "(아직 저장된 일기가 없습니다.)"}
     if (!question) {
       return NextResponse.json(
         { error: "질문을 생성할 수 없습니다." },
-        { status: 500 }
+        { status: 500, headers }
       );
     }
 
-    return NextResponse.json({ question });
+    return NextResponse.json({ question }, { headers });
   } catch (error) {
     console.error("[GENERATE_QUESTION_ERROR]", error);
 
@@ -94,13 +100,13 @@ ${recentContext || "(아직 저장된 일기가 없습니다.)"}
           error:
             "OpenAI API 키가 올바르지 않습니다. https://platform.openai.com/account/api-keys 에서 새 키를 복사해 .env.local 의 OPENAI_API_KEY 값을 교체해 주세요.",
         },
-        { status: 500 }
+        { status: 500, headers }
       );
     }
 
     return NextResponse.json(
       { error: "질문 생성 중 오류가 발생했습니다." },
-      { status: 500 }
+      { status: 500, headers }
     );
   }
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { getCorsHeaders } from "../../../lib/api-cors";
 import type { MoodScores } from "../../../lib/arisum-types";
 import { MOOD_SCORE_KEYS, MOOD_SCORE_LABELS } from "../../../lib/arisum-types";
 
@@ -12,7 +13,12 @@ type GenerateSummaryRequest = {
   scores: MoodScores;
 };
 
+export function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: getCorsHeaders() });
+}
+
 export async function POST(req: Request) {
+  const headers = getCorsHeaders(req);
   try {
     const body = (await req.json()) as GenerateSummaryRequest;
     const { journal, scores } = body;
@@ -20,14 +26,14 @@ export async function POST(req: Request) {
     if (!journal?.trim()) {
       return NextResponse.json(
         { error: "journal은 비어 있을 수 없습니다." },
-        { status: 400 }
+        { status: 400, headers }
       );
     }
 
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
         { error: "OpenAI API 키가 설정되어 있지 않습니다." },
-        { status: 500 }
+        { status: 500, headers }
       );
     }
 
@@ -63,11 +69,11 @@ ${scoresText}
     if (!summary) {
       return NextResponse.json(
         { error: "총평을 생성할 수 없습니다." },
-        { status: 500 }
+        { status: 500, headers }
       );
     }
 
-    return NextResponse.json({ summary });
+    return NextResponse.json({ summary }, { headers });
   } catch (error) {
     console.error("[GENERATE_SUMMARY_ERROR]", error);
 
@@ -88,13 +94,13 @@ ${scoresText}
           error:
             "OpenAI API 키가 올바르지 않습니다. https://platform.openai.com/account/api-keys 에서 새 키를 복사해 .env.local 의 OPENAI_API_KEY 값을 교체해 주세요.",
         },
-        { status: 500 }
+        { status: 500, headers }
       );
     }
 
     return NextResponse.json(
       { error: "총평 생성 중 오류가 발생했습니다." },
-      { status: 500 }
+      { status: 500, headers }
     );
   }
 }

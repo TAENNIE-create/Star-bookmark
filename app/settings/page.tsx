@@ -8,15 +8,19 @@ import { TabBar, type TabKey } from "../../components/arisum/tab-bar";
 import { MIDNIGHT_BLUE, MUTED, BORDER_LIGHT, SKY_WHITE } from "../../lib/theme";
 import { getAppStorage } from "../../lib/app-storage";
 import { createClient } from "../../lib/supabase/client";
+import Link from "next/link";
 import { getApiUrl } from "../../lib/api-client";
+import { scheduleReminderAt } from "../../lib/reminder-notifications";
 
 const ONBOARDING_KEY = "arisum-onboarding";
 const REMINDER_TIME_KEY = "arisum-reminder-time";
+/** 알림 끄기 선택 시 저장하는 값 */
+const REMINDER_OFF = "off";
 
 type Stored = { userName: string; completedAt?: string; hasVisited?: boolean };
 
-/** 앱에서 사용하는 localStorage 키 패턴 전부 제거 후 온보딩으로 */
-function clearAllLocalDataAndRedirect(router: ReturnType<typeof useRouter>) {
+/** 앱에서 사용하는 localStorage 전부 제거, 로그아웃(어댑터/캐시 해제), 온보딩으로 이동 */
+async function clearAllLocalDataAndRedirect(router: ReturnType<typeof useRouter>) {
   if (typeof window === "undefined") return;
   const keys: string[] = [];
   for (let i = 0; i < window.localStorage.length; i++) {
@@ -24,20 +28,25 @@ function clearAllLocalDataAndRedirect(router: ReturnType<typeof useRouter>) {
     if (k) keys.push(k);
   }
   keys.forEach((k) => window.localStorage.removeItem(k));
+  const supabase = createClient();
+  await supabase.auth.signOut();
   router.replace("/onboarding");
 }
 
-const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => ({
-  value: `${String(i).padStart(2, "0")}:00`,
-  label: `${i === 0 ? "자정" : i === 12 ? "정오" : i < 12 ? `오전 ${i}시` : `오후 ${i - 12}시`} (${String(i).padStart(2, "0")}:00)`,
-}));
+const HOUR_OPTIONS = [
+  { value: REMINDER_OFF, label: "알림 안 함" },
+  ...Array.from({ length: 24 }, (_, i) => ({
+    value: `${String(i).padStart(2, "0")}:00`,
+    label: `${i === 0 ? "자정" : i === 12 ? "정오" : i < 12 ? `오전 ${i}시` : `오후 ${i - 12}시`} (${String(i).padStart(2, "0")}:00)`,
+  })),
+];
 
 export default function SettingsPage() {
   const router = useRouter();
   const [nickname, setNickname] = useState("");
   const [saved, setSaved] = useState(false);
   const [user, setUser] = useState<{ email?: string } | null>(null);
-  const [reminderTime, setReminderTime] = useState("22:00");
+  const [reminderTime, setReminderTime] = useState<string>("22:00");
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
@@ -52,17 +61,25 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    try {
-      const raw = getAppStorage().getItem(ONBOARDING_KEY);
-      if (raw) {
-        const data = JSON.parse(raw) as Stored;
-        setNickname(typeof data.userName === "string" ? data.userName : "");
+    (async () => {
+      try {
+        const raw = getAppStorage().getItem(ONBOARDING_KEY);
+        if (raw) {
+          const data = JSON.parse(raw) as Stored;
+          setNickname(typeof data.userName === "string" ? data.userName : "");
+        }
+        const t = getAppStorage().getItem(REMINDER_TIME_KEY);
+        if (t === REMINDER_OFF || t === "" || t == null) {
+          setReminderTime(REMINDER_OFF);
+          await scheduleReminderAt(REMINDER_OFF);
+        } else if (t && /^\d{2}:\d{2}$/.test(t)) {
+          setReminderTime(t);
+          await scheduleReminderAt(t);
+        }
+      } catch {
+        // ignore
       }
-      const t = getAppStorage().getItem(REMINDER_TIME_KEY);
-      if (t && /^\d{2}:\d{2}$/.test(t)) setReminderTime(t);
-    } catch {
-      // ignore
-    }
+    })();
   }, []);
 
   const handleSaveNickname = () => {
@@ -88,13 +105,19 @@ export default function SettingsPage() {
     const redirectTo =
       platform === "android" || platform === "ios"
         ? "com.starbookmark.app://login-callback"
-        : `${typeof window !== "undefined" ? window.location.origin : ""}/auth/callback?next=${encodeURIComponent("/settings")}`;
+        : `https://star-bookmark.netlify.app/auth/callback?next=${encodeURIComponent("/settings")}`;
     const { data, error } = await supabase.auth.signInWithOAuth({ provider, options: { redirectTo } });
     if (error) {
       console.error("[OAuth]", error);
       return;
     }
-    if (data?.url) window.location.href = data.url;
+    if (!data?.url) return;
+    if (platform === "android" || platform === "ios") {
+      const { Browser } = await import("@capacitor/browser");
+      await Browser.open({ url: data.url });
+    } else {
+      window.location.href = data.url;
+    }
   };
 
   const handleLogout = async () => {
@@ -108,7 +131,7 @@ export default function SettingsPage() {
       return;
     }
     setConfirmReset(false);
-    clearAllLocalDataAndRedirect(router);
+    void clearAllLocalDataAndRedirect(router);
   };
 
   const handleWithdraw = async () => {
@@ -299,10 +322,13 @@ export default function SettingsPage() {
                 </p>
                 <select
                   value={reminderTime}
-                  onChange={(e) => {
+                  onChange={async (e) => {
                     const v = e.target.value;
                     setReminderTime(v);
-                    if (typeof window !== "undefined") getAppStorage().setItem(REMINDER_TIME_KEY, v);
+                    if (typeof window !== "undefined") {
+                      getAppStorage().setItem(REMINDER_TIME_KEY, v);
+                      await scheduleReminderAt(v);
+                    }
                   }}
                   className="w-full rounded-xl px-4 py-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/20"
                   style={{ border: `1px solid ${BORDER_LIGHT}`, backgroundColor: "#fff", color: MIDNIGHT_BLUE }}
@@ -361,35 +387,22 @@ export default function SettingsPage() {
             >
               정보
             </h2>
-            <div className="space-y-4">
-              <div
-                className="rounded-xl p-4"
-                style={{ backgroundColor: SKY_WHITE, border: `1px solid ${BORDER_LIGHT}` }}
+            <div className="space-y-3">
+              <Link
+                href="/settings/privacy"
+                className="block text-sm py-1"
+                style={{ fontFamily: "var(--font-a2z-regular), sans-serif", color: MIDNIGHT_BLUE }}
               >
-                <p className="text-xs font-semibold mb-1.5" style={{ color: MIDNIGHT_BLUE }}>
-                  흩어진 조각들이 모여 당신이라는 은하가 됩니다.
-                </p>
-                <p className="text-[11px] leading-relaxed" style={{ color: MUTED }}>
-                  우리가 무심코 흘려보낸 하루의 생각들은 사실 나를 이루는 소중한 별 조각들입니다. 혼자서는 찾기 어려웠던 내면의 무늬를 별지기가 함께 찾아내어 이어드릴게요. 매일의 기록이 쌓여 밤하늘을 수놓을 때, 당신은 비로소 누구보다 찬란하고 선명한 '진짜 나'를 마주하게 될 거예요.
-                </p>
-              </div>
-              <div className="flex flex-col gap-2">
-                <a
-                  href="/privacy"
-                  className="text-sm py-1"
-                  style={{ color: MIDNIGHT_BLUE }}
-                >
-                  개인정보 처리방침
-                </a>
-                <a
-                  href="/terms"
-                  className="text-sm py-1"
-                  style={{ color: MIDNIGHT_BLUE }}
-                >
-                  서비스 이용약관
-                </a>
-              </div>
-              <p className="text-[11px]" style={{ color: MUTED }}>
+                개인정보 처리방침
+              </Link>
+              <Link
+                href="/settings/terms"
+                className="block text-sm py-1"
+                style={{ fontFamily: "var(--font-a2z-regular), sans-serif", color: MIDNIGHT_BLUE }}
+              >
+                서비스 이용약관
+              </Link>
+              <p className="text-[11px] pt-2" style={{ color: MUTED }}>
                 버전 정보 · v1.0.0 (MVP)
               </p>
             </div>

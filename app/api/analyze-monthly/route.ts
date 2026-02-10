@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { getCorsHeaders } from "../../../lib/api-cors";
 import type { MoodScores } from "../../../lib/arisum-types";
 import { MOOD_SCORE_KEYS } from "../../../lib/arisum-types";
 
@@ -49,7 +50,12 @@ const SPECTRUM_LABELS: { key: keyof MoodScores; label: string; low: string; high
   { key: "selfDirection", label: "삶의동력", low: "통제", high: "순응" },
 ];
 
+export function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: getCorsHeaders() });
+}
+
 export async function POST(req: Request) {
+  const headers = getCorsHeaders(req);
   try {
     const body = (await req.json()) as AnalyzeMonthlyRequest;
     const { yearMonth, diaries, scoresHistory, userName } = body;
@@ -66,14 +72,14 @@ export async function POST(req: Request) {
     if (!yearMonth || !Array.isArray(diaries) || diaries.length === 0) {
       return NextResponse.json(
         { error: "yearMonth와 diaries(최소 1개)가 필요합니다." },
-        { status: 400 }
+        { status: 400, headers }
       );
     }
 
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
         { error: "OpenAI API 키가 설정되어 있지 않습니다." },
-        { status: 500 }
+        { status: 500, headers }
       );
     }
 
@@ -179,7 +185,7 @@ export async function POST(req: Request) {
     if (!content) {
       return NextResponse.json(
         { error: "모델 응답을 가져올 수 없습니다." },
-        { status: 500 }
+        { status: 500, headers }
       );
     }
 
@@ -189,7 +195,7 @@ export async function POST(req: Request) {
     } catch {
       return NextResponse.json(
         { error: "월간 분석 파싱에 실패했습니다." },
-        { status: 500 }
+        { status: 500, headers }
       );
     }
 
@@ -204,12 +210,12 @@ export async function POST(req: Request) {
     }
     raw.metricShift = raw.metricShift ?? metricShift;
 
-    return NextResponse.json(raw);
+    return NextResponse.json(raw, { headers });
   } catch (error) {
     console.error("[ANALYZE_MONTHLY_ERROR]", error);
     return NextResponse.json(
       { error: "월간 분석 중 오류가 발생했습니다." },
-      { status: 500 }
+      { status: 500, headers }
     );
   }
 }

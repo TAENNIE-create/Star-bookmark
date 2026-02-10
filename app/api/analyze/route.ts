@@ -67,12 +67,17 @@ type AnalyzeResponse = {
   newlyConfirmedTrait?: { traitId: string; label: string; opening: string; body: string; closing: string };
 };
 
+const CORS_HEADERS = {
+  ...getCorsHeaders(),
+  "Access-Control-Allow-Origin": "*",
+};
+
 export function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: getCorsHeaders() });
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
 }
 
 export async function POST(req: Request) {
-  const headers = getCorsHeaders(req);
+  const headers = { ...getCorsHeaders(req), "Access-Control-Allow-Origin": "*" };
   try {
     const body = (await req.json()) as AnalyzeRequest;
     const journal = body.journal?.trim();

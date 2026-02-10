@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { getCorsHeaders } from "../../../lib/api-cors";
 import type { MoodScores } from "../../../lib/arisum-types";
 import { DEFAULT_MOOD_SCORES } from "../../../lib/arisum-types";
 
@@ -156,7 +157,12 @@ function buildConnections(
   return conn;
 }
 
+export function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: getCorsHeaders() });
+}
+
 export async function POST(req: Request) {
+  const headers = getCorsHeaders(req);
   try {
     const body = (await req.json()) as ConstellationsRequest;
     const scoresHistory = body.scoresHistory ?? {};
@@ -177,11 +183,10 @@ export async function POST(req: Request) {
     const allDates = [...new Set([...scoreDates, ...journalDates])].sort();
 
     if (allDates.length === 0) {
-      return NextResponse.json({
-        stars: [],
-        constellations: [],
-        connections: [],
-      });
+      return NextResponse.json(
+        { stars: [], constellations: [], connections: [] },
+        { headers }
+      );
     }
 
     function forceVisibleCoord(val: number): number {
@@ -329,16 +334,15 @@ export async function POST(req: Request) {
       });
     }
 
-    return NextResponse.json({
-      stars: starsWithKeywords,
-      constellations,
-      connections,
-    });
+    return NextResponse.json(
+      { stars: starsWithKeywords, constellations, connections },
+      { headers }
+    );
   } catch (error) {
     console.error("[CONSTELLATIONS_ERROR]", error);
     return NextResponse.json(
       { error: "별자리를 불러오는 중 오류가 발생했습니다." },
-      { status: 500 }
+      { status: 500, headers }
     );
   }
 }

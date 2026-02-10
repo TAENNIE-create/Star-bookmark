@@ -6,7 +6,7 @@ import { motion, PanInfo, AnimatePresence } from "framer-motion";
 import { TabBar, type TabKey } from "../../components/arisum/tab-bar";
 import type { MoodScores } from "../../lib/arisum-types";
 import { MIDNIGHT_BLUE, MUTED, CARD_BG, LU_ICON } from "../../lib/theme";
-import { getApiUrl } from "../../lib/api-client";
+import { getAnalyzeApiUrl } from "../../lib/api-client";
 import { getLuBalance, subtractLu, addLu, LU_DAILY_REPORT_UNLOCK, LU_REANALYZE } from "../../lib/lu-balance";
 import { getMembershipTier, MEMBERSHIP_ACCESS_DAYS, isDateAccessible, getRequiredShards } from "../../lib/economy";
 import { getUnlockedMonths } from "../../lib/archive-unlock";
@@ -212,6 +212,8 @@ function DiaryCalendarContent() {
     newLevel: TraitLevel;
     message: string;
   } | null>(null);
+  /** 분석 실패 시 사용자에게 보여줄 메시지 (무한 로딩 방지) */
+  const [analysisErrorMessage, setAnalysisErrorMessage] = useState<string | null>(null);
   const hasAutoSelectedToday = useRef(false);
 
   const refreshSelectedQuests = () => {
@@ -355,9 +357,11 @@ function DiaryCalendarContent() {
     const entries = data[dateKey] ?? [];
     if (entries.length === 0) return;
 
+    setAnalysisErrorMessage(null);
     setIsLoadingReport(true);
     const journalTexts = entries.map((e) => e.content);
     const existing_report = getReportByDate()[dateKey];
+    let luSubtracted = false;
 
     try {
       const user_identity_summary =
@@ -382,34 +386,70 @@ function DiaryCalendarContent() {
         isDateAccessible(d, accessDays, unlockedMonths)
       );
 
-      const analyzeRes = await fetch(getApiUrl("/api/analyze"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          journals: journalTexts,
-          date: dateKey,
-          user_identity_summary: user_identity_summary || undefined,
-          existing_report: existing_report || undefined,
-          recentJournalContents: getRecentJournalContents(data, { accessDays, unlockedMonths }),
-          existingStarDates,
-          previousConstellationName: getCurrentConstellation()?.name ?? undefined,
-        }),
-      });
+      const analyzeUrl = getAnalyzeApiUrl();
+      let analyzeRes: Response;
+      try {
+        analyzeRes = await fetch(analyzeUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            journals: journalTexts,
+            date: dateKey,
+            user_identity_summary: user_identity_summary || undefined,
+            existing_report: existing_report || undefined,
+            recentJournalContents: getRecentJournalContents(data, { accessDays, unlockedMonths }),
+            existingStarDates,
+            previousConstellationName: getCurrentConstellation()?.name ?? undefined,
+          }),
+        });
+      } catch (fetchErr) {
+        const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+        console.error("[일기 해금 분석] fetch 실패:", { code: "NETWORK_ERROR", message: msg, url: analyzeUrl }, fetchErr);
+        throw fetchErr;
+      }
 
-      if (!analyzeRes.ok) throw new Error("분석 실패");
+      if (!analyzeRes.ok) {
+        const status = analyzeRes.status;
+        let bodyText = "";
+        try {
+          bodyText = await analyzeRes.text();
+        } catch {
+          bodyText = "(응답 본문 읽기 실패)";
+        }
+        console.error("[일기 해금 분석] API 오류:", {
+          status,
+          statusText: analyzeRes.statusText,
+          message: bodyText?.slice(0, 200) ?? "",
+          url: analyzeUrl,
+        });
+        throw new Error(`분석 실패: ${status} ${analyzeRes.statusText}`);
+      }
 
-      const analyzeData = await analyzeRes.json();
+      let analyzeData: unknown;
+      try {
+        analyzeData = await analyzeRes.json();
+      } catch (parseErr) {
+        console.error("[일기 해금 분석] 응답 JSON 파싱 실패:", parseErr);
+        throw parseErr;
+      }
+      if (!analyzeData || typeof analyzeData !== "object") {
+        console.error("[일기 해금 분석] AI 응답 비정상 (객체 아님):", typeof analyzeData, analyzeData);
+        throw new Error("분석 응답 형식 오류");
+      }
+
       if (!subtractLu(cost)) {
         setIsLoadingReport(false);
         return;
       }
+      luSubtracted = true;
       window.dispatchEvent(new Event("lu-balance-updated"));
-      const todayFlow = analyzeData.todayFlow ?? null;
-      const gardenerWord = analyzeData.gardenerWord ?? null;
-      const growthSeeds = Array.isArray(analyzeData.growthSeeds) ? analyzeData.growthSeeds : [];
+      const ad = analyzeData as { todayFlow?: string; gardenerWord?: string; growthSeeds?: string[]; keywords?: string[]; identityArchive?: unknown; updatedSummary?: string; metrics?: MoodScores; scores?: MoodScores; starPosition?: { x: number; y: number }; starConnections?: { from: string; to: string }[]; currentConstellations?: unknown[]; currentConstellation?: { name: string; meaning: string; connectionStyle?: string; starIds?: string[] }; newlyConfirmedTrait?: { label: string; opening: string; body: string; closing: string }; traitIdsIncrementedForThisDate?: string[]; counselorLetter?: string };
+      const todayFlow = ad.todayFlow ?? null;
+      const gardenerWord = ad.gardenerWord ?? null;
+      const growthSeeds = Array.isArray(ad.growthSeeds) ? ad.growthSeeds : [];
       const keywords: [string, string, string] | undefined =
-        Array.isArray(analyzeData.keywords) && analyzeData.keywords.length >= 3
-          ? [String(analyzeData.keywords[0]), String(analyzeData.keywords[1]), String(analyzeData.keywords[2])]
+        Array.isArray(ad.keywords) && ad.keywords.length >= 3
+          ? [String(ad.keywords[0]), String(ad.keywords[1]), String(ad.keywords[2])]
           : undefined;
 
       setReportData({
@@ -422,10 +462,10 @@ function DiaryCalendarContent() {
 
       if (typeof window !== "undefined") {
         try {
-          const toSave = analyzeData.identityArchive ?? { summary: analyzeData.updatedSummary ?? "", traitCounts: {}, confirmedTraits: {} };
+          const toSave = ad.identityArchive ?? { summary: ad.updatedSummary ?? "", traitCounts: {}, confirmedTraits: {} };
           getAppStorage().setItem("user_identity_summary", typeof toSave === "string" ? toSave : JSON.stringify(toSave));
-          const metrics: MoodScores = analyzeData.metrics ?? analyzeData.scores;
-          if (metrics) {
+          const metrics: MoodScores = ad.metrics ?? ad.scores ?? {};
+          if (metrics && Object.keys(metrics).length > 0) {
             getAppStorage().setItem("arisum-latest-scores", JSON.stringify({ date: dateKey, scores: metrics }));
             const historyRaw = getAppStorage().getItem("arisum-scores-history");
             const history: Record<string, MoodScores> = historyRaw ? JSON.parse(historyRaw) : {};
@@ -439,10 +479,9 @@ function DiaryCalendarContent() {
             growthSeeds,
             lastAnalyzedText: combinedText,
             ...(keywords && { keywords }),
-            ...(Array.isArray((analyzeData as { traitIdsIncrementedForThisDate?: string[] }).traitIdsIncrementedForThisDate) &&
-              (analyzeData as { traitIdsIncrementedForThisDate: string[] }).traitIdsIncrementedForThisDate.length > 0 && {
-                traitIdsContributed: (analyzeData as { traitIdsIncrementedForThisDate: string[] }).traitIdsIncrementedForThisDate,
-              }),
+            ...(Array.isArray(ad.traitIdsIncrementedForThisDate) && ad.traitIdsIncrementedForThisDate.length > 0 && {
+              traitIdsContributed: ad.traitIdsIncrementedForThisDate,
+            }),
           });
           if (dateKey === getTodayKey() && growthSeeds.length > 0) {
             const tomorrowKey = getTomorrowKey();
@@ -450,36 +489,36 @@ function DiaryCalendarContent() {
             setSelectedQuests([]);
             window.dispatchEvent(new Event("dailyQuests-updated"));
           }
-          if (analyzeData.keywords) {
+          if (ad.keywords) {
             getAppStorage().setItem(
               "arisum-latest-analysis",
-              JSON.stringify({ keywords: analyzeData.keywords, counselorLetter: analyzeData.counselorLetter })
+              JSON.stringify({ keywords: ad.keywords, counselorLetter: ad.counselorLetter })
             );
           }
-          if (analyzeData.starPosition && analyzeData.keywords) {
+          if (ad.starPosition && ad.keywords) {
             const combinedText = getCombinedJournalText(dateKey, data);
             mergeAtlasWithNewStar(
               dateKey,
-              analyzeData.starPosition,
-              analyzeData.keywords,
-              analyzeData.starConnections ?? [],
+              ad.starPosition,
+              ad.keywords,
+              ad.starConnections ?? [],
               combinedText.length
             );
           }
-          if (Array.isArray(analyzeData.currentConstellations) && analyzeData.currentConstellations.length > 0) {
-            setActiveConstellations(analyzeData.currentConstellations);
-          } else if (analyzeData.currentConstellation) {
-            setCurrentConstellation(analyzeData.currentConstellation);
+          if (Array.isArray(ad.currentConstellations) && ad.currentConstellations.length > 0) {
+            setActiveConstellations(ad.currentConstellations);
+          } else if (ad.currentConstellation) {
+            setCurrentConstellation(ad.currentConstellation);
           }
-          if (analyzeData.newlyConfirmedTrait) {
+          if (ad.newlyConfirmedTrait) {
             setTraitConfirmPopup({
-              label: analyzeData.newlyConfirmedTrait.label,
-              opening: analyzeData.newlyConfirmedTrait.opening,
-              body: analyzeData.newlyConfirmedTrait.body,
-              closing: analyzeData.newlyConfirmedTrait.closing,
+              label: ad.newlyConfirmedTrait.label,
+              opening: ad.newlyConfirmedTrait.opening,
+              body: ad.newlyConfirmedTrait.body,
+              closing: ad.newlyConfirmedTrait.closing,
             });
           }
-          const newArchive = analyzeData.identityArchive;
+          const newArchive = ad.identityArchive;
           if (newArchive && typeof newArchive === "object" && Array.isArray(newArchive.confirmedTraits)) {
             const newCounts = (newArchive as { traitCounts?: Record<string, number> }).traitCounts ?? {};
             const oldCounts = previousArchive.traitCounts ?? {};
@@ -504,7 +543,12 @@ function DiaryCalendarContent() {
       }
       window.dispatchEvent(new Event("report-updated"));
     } catch (error) {
-      console.error("리포트 해금 분석 실패:", error);
+      const err = error as { status?: number; message?: string };
+      console.error("[일기 해금 분석] 실패:", {
+        code: err?.status ?? "ERROR",
+        message: err?.message ?? String(error),
+      }, error);
+      setAnalysisErrorMessage("별지기와의 통신이 원활하지 않습니다. 다시 시도해 주세요.");
       setReportData({
         date: dateKey,
         todayFlow: null,
@@ -512,6 +556,10 @@ function DiaryCalendarContent() {
         growthSeeds: [],
         hasEntry: true,
       });
+      if (luSubtracted) {
+        addLu(cost);
+        window.dispatchEvent(new Event("lu-balance-updated"));
+      }
     } finally {
       setIsLoadingReport(false);
     }
@@ -555,38 +603,74 @@ function DiaryCalendarContent() {
       const existingStarDatesRe = allStarDatesRe.filter((d) =>
         isDateAccessible(d, accessDays, unlockedMonths)
       );
-      const res = await fetch(getApiUrl("/api/analyze"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          journals: journalTexts,
-          date: selectedDate,
-          user_identity_summary: user_identity_summary || undefined,
-          existing_report: existing
-            ? {
-                todayFlow: existing.todayFlow,
-                gardenerWord: existing.gardenerWord,
-                growthSeeds: existing.growthSeeds,
-              }
-            : undefined,
-          recentJournalContents: getRecentJournalContents(journals, { accessDays, unlockedMonths }),
-          existingStarDates: existingStarDatesRe,
-          previousConstellationName: getCurrentConstellation()?.name ?? undefined,
-        }),
-      });
-      if (!res.ok) throw new Error("분석 실패");
-      const analyzeData = await res.json();
+      const analyzeUrlRe = getAnalyzeApiUrl();
+      let res: Response;
+      try {
+        res = await fetch(analyzeUrlRe, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            journals: journalTexts,
+            date: selectedDate,
+            user_identity_summary: user_identity_summary || undefined,
+            existing_report: existing
+              ? {
+                  todayFlow: existing.todayFlow,
+                  gardenerWord: existing.gardenerWord,
+                  growthSeeds: existing.growthSeeds,
+                }
+              : undefined,
+            recentJournalContents: getRecentJournalContents(journals, { accessDays, unlockedMonths }),
+            existingStarDates: existingStarDatesRe,
+            previousConstellationName: getCurrentConstellation()?.name ?? undefined,
+          }),
+        });
+      } catch (fetchErr) {
+        const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+        console.error("[다시 분석] fetch 실패:", { code: "NETWORK_ERROR", message: msg, url: analyzeUrlRe }, fetchErr);
+        setAnalysisErrorMessage("별지기와의 통신이 원활하지 않습니다. 다시 시도해 주세요.");
+        setIsReanalyzing(false);
+        return;
+      }
+      if (!res.ok) {
+        let bodyText = "";
+        try {
+          bodyText = await res.text();
+        } catch {
+          bodyText = "(응답 본문 읽기 실패)";
+        }
+        console.error("[다시 분석] API 오류:", { status: res.status, statusText: res.statusText, message: bodyText?.slice(0, 200) ?? "", url: analyzeUrlRe });
+        setAnalysisErrorMessage("별지기와의 통신이 원활하지 않습니다. 다시 시도해 주세요.");
+        setIsReanalyzing(false);
+        return;
+      }
+      let analyzeData: unknown;
+      try {
+        analyzeData = await res.json();
+      } catch (parseErr) {
+        console.error("[다시 분석] 응답 JSON 파싱 실패:", parseErr);
+        setAnalysisErrorMessage("별지기와의 통신이 원활하지 않습니다. 다시 시도해 주세요.");
+        setIsReanalyzing(false);
+        return;
+      }
+      if (!analyzeData || typeof analyzeData !== "object") {
+        console.error("[다시 분석] AI 응답 비정상 (객체 아님):", typeof analyzeData, analyzeData);
+        setAnalysisErrorMessage("별지기와의 통신이 원활하지 않습니다. 다시 시도해 주세요.");
+        setIsReanalyzing(false);
+        return;
+      }
       if (!subtractLu(reCost)) {
         setIsReanalyzing(false);
         return;
       }
       window.dispatchEvent(new Event("lu-balance-updated"));
-      const todayFlow = analyzeData.todayFlow ?? null;
-      const gardenerWord = analyzeData.gardenerWord ?? null;
-      const growthSeeds = Array.isArray(analyzeData.growthSeeds) ? analyzeData.growthSeeds : [];
+      const adRe = analyzeData as { todayFlow?: string; gardenerWord?: string; growthSeeds?: string[]; keywords?: string[]; identityArchive?: unknown; updatedSummary?: string; metrics?: MoodScores; scores?: MoodScores; traitIdsIncrementedForThisDate?: string[]; starPosition?: { x: number; y: number }; starConnections?: { from: string; to: string }[]; currentConstellations?: unknown[]; currentConstellation?: { name: string; meaning: string; connectionStyle?: string; starIds?: string[] }; newlyConfirmedTrait?: { label: string; opening: string; body: string; closing: string }; counselorLetter?: string };
+      const todayFlow = adRe.todayFlow ?? null;
+      const gardenerWord = adRe.gardenerWord ?? null;
+      const growthSeeds = Array.isArray(adRe.growthSeeds) ? adRe.growthSeeds : [];
       const keywords: [string, string, string] | undefined =
-        Array.isArray(analyzeData.keywords) && analyzeData.keywords.length >= 3
-          ? [String(analyzeData.keywords[0]), String(analyzeData.keywords[1]), String(analyzeData.keywords[2])]
+        Array.isArray(adRe.keywords) && adRe.keywords.length >= 3
+          ? [String(adRe.keywords[0]), String(adRe.keywords[1]), String(adRe.keywords[2])]
           : undefined;
       const combinedText = getCombinedJournalText(selectedDate, journals);
       setReportData({
@@ -602,17 +686,16 @@ function DiaryCalendarContent() {
         growthSeeds,
         lastAnalyzedText: combinedText,
         ...(keywords && { keywords }),
-        ...(Array.isArray((analyzeData as { traitIdsIncrementedForThisDate?: string[] }).traitIdsIncrementedForThisDate) &&
-          (analyzeData as { traitIdsIncrementedForThisDate: string[] }).traitIdsIncrementedForThisDate.length > 0 && {
-            traitIdsContributed: (analyzeData as { traitIdsIncrementedForThisDate: string[] }).traitIdsIncrementedForThisDate,
-          }),
+        ...(Array.isArray(adRe.traitIdsIncrementedForThisDate) && adRe.traitIdsIncrementedForThisDate.length > 0 && {
+          traitIdsContributed: adRe.traitIdsIncrementedForThisDate,
+        }),
       });
       if (typeof window !== "undefined") {
         try {
-          const toSave = analyzeData.identityArchive ?? { summary: analyzeData.updatedSummary ?? "", traitCounts: {}, confirmedTraits: {} };
+          const toSave = adRe.identityArchive ?? { summary: adRe.updatedSummary ?? "", traitCounts: {}, confirmedTraits: {} };
           getAppStorage().setItem("user_identity_summary", typeof toSave === "string" ? toSave : JSON.stringify(toSave));
-          const metrics: MoodScores = analyzeData.metrics ?? analyzeData.scores;
-          if (metrics) {
+          const metrics: MoodScores = adRe.metrics ?? adRe.scores ?? {};
+          if (metrics && Object.keys(metrics).length > 0) {
             getAppStorage().setItem(
               "arisum-latest-scores",
               JSON.stringify({ date: selectedDate, scores: metrics })
@@ -622,39 +705,39 @@ function DiaryCalendarContent() {
             history[selectedDate] = metrics;
             getAppStorage().setItem("arisum-scores-history", JSON.stringify(history));
           }
-          if (analyzeData.keywords) {
+          if (adRe.keywords) {
             getAppStorage().setItem(
               "arisum-latest-analysis",
               JSON.stringify({
-                keywords: analyzeData.keywords,
-                counselorLetter: analyzeData.counselorLetter,
+                keywords: adRe.keywords,
+                counselorLetter: adRe.counselorLetter,
               })
             );
           }
-          if (analyzeData.starPosition && analyzeData.keywords) {
+          if (adRe.starPosition && adRe.keywords) {
             const combinedTextRe = getCombinedJournalText(selectedDate, journals);
             mergeAtlasWithNewStar(
               selectedDate,
-              analyzeData.starPosition,
-              analyzeData.keywords,
-              analyzeData.starConnections ?? [],
+              adRe.starPosition,
+              adRe.keywords,
+              adRe.starConnections ?? [],
               combinedTextRe.length
             );
           }
-          if (Array.isArray(analyzeData.currentConstellations) && analyzeData.currentConstellations.length > 0) {
-            setActiveConstellations(analyzeData.currentConstellations);
-          } else if (analyzeData.currentConstellation) {
-            setCurrentConstellation(analyzeData.currentConstellation);
+          if (Array.isArray(adRe.currentConstellations) && adRe.currentConstellations.length > 0) {
+            setActiveConstellations(adRe.currentConstellations);
+          } else if (adRe.currentConstellation) {
+            setCurrentConstellation(adRe.currentConstellation);
           }
-          if (analyzeData.newlyConfirmedTrait) {
+          if (adRe.newlyConfirmedTrait) {
             setTraitConfirmPopup({
-              label: analyzeData.newlyConfirmedTrait.label,
-              opening: analyzeData.newlyConfirmedTrait.opening,
-              body: analyzeData.newlyConfirmedTrait.body,
-              closing: analyzeData.newlyConfirmedTrait.closing,
+              label: adRe.newlyConfirmedTrait.label,
+              opening: adRe.newlyConfirmedTrait.opening,
+              body: adRe.newlyConfirmedTrait.body,
+              closing: adRe.newlyConfirmedTrait.closing,
             });
           }
-          const newArchiveRe = analyzeData.identityArchive;
+          const newArchiveRe = adRe.identityArchive;
           if (newArchiveRe && typeof newArchiveRe === "object" && Array.isArray(newArchiveRe.confirmedTraits)) {
             const newCountsRe = (newArchiveRe as { traitCounts?: Record<string, number> }).traitCounts ?? {};
             const oldCountsRe = previousArchiveRe.traitCounts ?? {};
@@ -958,6 +1041,11 @@ function DiaryCalendarContent() {
                               보유 별조각 · <span className="font-semibold tabular-nums" style={{ color: MIDNIGHT_BLUE }}>{LU_ICON} {lu}</span>
                             </p>
                           </div>
+                          {analysisErrorMessage && (
+                            <p className="text-sm text-amber-600 text-center" role="alert">
+                              {analysisErrorMessage}
+                            </p>
+                          )}
                           {lu < costDaily && (
                             <p className="text-xs" style={{ color: "#94A3B8" }}>
                               별조각이 부족하면 기록을 읽을 수 없어요.
