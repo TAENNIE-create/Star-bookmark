@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { createClient } from "../../lib/supabase/client";
 import {
   getAll,
+  getLocalStorageKeysToMigrate,
   migrateLocalStorageToSupabase,
   setItem as setUserDataItem,
   removeItem as removeUserDataItem,
@@ -21,6 +22,10 @@ export function SupabaseStorageProvider({ children }: { children: React.ReactNod
     const supabase = createClient();
 
     function initStorage(userId: string) {
+      const hasLocal = typeof window !== "undefined" && getLocalStorageKeysToMigrate().length > 0;
+      if (hasLocal) {
+        window.dispatchEvent(new Event("arisum-migration-start"));
+      }
       migrateLocalStorageToSupabase(supabase, userId)
         .then(() => getAll(supabase, userId))
         .then((all) => {
@@ -54,6 +59,11 @@ export function SupabaseStorageProvider({ children }: { children: React.ReactNod
               removeUserDataItem(supabase, userId, key).catch(() => {});
             },
           });
+        })
+        .finally(() => {
+          if (hasLocal && typeof window !== "undefined") {
+            window.dispatchEvent(new Event("arisum-migration-end"));
+          }
         });
     }
 

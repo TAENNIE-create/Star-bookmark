@@ -51,6 +51,7 @@ export default function SettingsPage() {
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
   const [withdrawing, setWithdrawing] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -61,13 +62,20 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const onStart = () => setIsMigrating(true);
+    const onEnd = () => setIsMigrating(false);
+    window.addEventListener("arisum-migration-start", onStart);
+    window.addEventListener("arisum-migration-end", onEnd);
+    return () => {
+      window.removeEventListener("arisum-migration-start", onStart);
+      window.removeEventListener("arisum-migration-end", onEnd);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
     (async () => {
       try {
-        const raw = getAppStorage().getItem(ONBOARDING_KEY);
-        if (raw) {
-          const data = JSON.parse(raw) as Stored;
-          setNickname(typeof data.userName === "string" ? data.userName : "");
-        }
         const t = getAppStorage().getItem(REMINDER_TIME_KEY);
         if (t === REMINDER_OFF || t === "" || t == null) {
           setReminderTime(REMINDER_OFF);
@@ -82,16 +90,60 @@ export default function SettingsPage() {
     })();
   }, []);
 
-  const handleSaveNickname = () => {
+  useEffect(() => {
     if (typeof window === "undefined") return;
+    const loadNickname = (fromUser: { id: string } | null) => {
+      if (fromUser) {
+        createClient()
+          .from("profiles")
+          .select("nickname")
+          .eq("id", fromUser.id)
+          .maybeSingle()
+          .then(({ data }) => {
+            const name = (data?.nickname ?? "").trim();
+            if (name) setNickname(name);
+            else {
+              const raw = getAppStorage().getItem(ONBOARDING_KEY);
+              if (raw) {
+                const parsed = JSON.parse(raw) as Stored;
+                setNickname(typeof parsed.userName === "string" ? parsed.userName.trim() : "");
+              }
+            }
+          })
+          .catch(() => {
+            const raw = getAppStorage().getItem(ONBOARDING_KEY);
+            if (raw) {
+              const parsed = JSON.parse(raw) as Stored;
+              setNickname(typeof parsed.userName === "string" ? parsed.userName.trim() : "");
+            }
+          });
+      } else {
+        const raw = getAppStorage().getItem(ONBOARDING_KEY);
+        if (raw) {
+          const data = JSON.parse(raw) as Stored;
+          setNickname(typeof data.userName === "string" ? data.userName.trim() : "");
+        }
+      }
+    };
+    loadNickname(user);
+  }, [user]);
+
+  const handleSaveNickname = async () => {
+    if (typeof window === "undefined") return;
+    const name = nickname.trim();
     try {
       const storage = getAppStorage();
       const raw = storage.getItem(ONBOARDING_KEY);
       const prev: Stored = raw ? JSON.parse(raw) : { userName: "" };
+      const newName = name || prev.userName;
       storage.setItem(
         ONBOARDING_KEY,
-        JSON.stringify({ ...prev, userName: nickname.trim() || prev.userName })
+        JSON.stringify({ ...prev, userName: newName })
       );
+      if (user?.id) {
+        const supabase = createClient();
+        await supabase.from("profiles").update({ nickname: newName || null, updated_at: new Date().toISOString() }).eq("id", user.id);
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 1600);
     } catch {
@@ -214,12 +266,16 @@ export default function SettingsPage() {
             >
               계정
             </h2>
-            {user ? (
+            {isMigrating ? (
+              <p className="text-sm py-4 text-center" style={{ color: MUTED }}>
+                데이터를 동기화하고 있어요...
+              </p>
+            ) : user ? (
               <div className="space-y-3">
                 <p className="text-xs" style={{ color: MUTED }}>
-                  연동 정보
+                  연동된 계정
                 </p>
-                <p className="text-sm font-medium" style={{ color: MIDNIGHT_BLUE }}>
+                <p className="text-sm font-medium break-all" style={{ color: MIDNIGHT_BLUE }}>
                   {user.email ?? "로그인된 계정"}
                 </p>
                 <button

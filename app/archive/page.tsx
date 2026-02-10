@@ -11,8 +11,8 @@ const LOCK_ICON_SIZE = 18;
 const GOLD_FILTER = "invert(90%) sepia(30%) saturate(2000%) hue-rotate(350deg) brightness(105%) contrast(105%)";
 const LOCK_GLOW_FILTER = `${GOLD_FILTER} drop-shadow(0 0 4px rgba(253,230,138,0.6)) drop-shadow(0 0 8px rgba(253,230,138,0.3))`;
 
-import { getLuBalance, subtractLu, LU_ARCHIVE_BOOK_UNLOCK } from "../../lib/lu-balance";
-import { COST_PERMANENT_MEMORY_KEY } from "../../lib/economy";
+import { getLuBalance, subtractLu } from "../../lib/lu-balance";
+import { COST_PERMANENT_MEMORY_KEY, getMembershipTier, getRequiredShards } from "../../lib/economy";
 import { getUserName } from "../../lib/home-greeting";
 import { getUnlockedMonths, setUnlockedMonths } from "../../lib/archive-unlock";
 import { getAppStorage } from "../../lib/app-storage";
@@ -166,9 +166,10 @@ export default function ArchivePage() {
   if (!mounted) return null;
 
   const slots = buildMonthlySlots(reports, unlocked);
+  const costMonthly = getRequiredShards(getMembershipTier(), "monthly_archive_unlock");
 
   const unlockMonth = (yearMonth: string) => {
-    const needed = LU_ARCHIVE_BOOK_UNLOCK;
+    const needed = costMonthly;
     if (lu < needed || unlocked.has(yearMonth)) return;
     if (!subtractLu(needed)) return;
     setLu(getLuBalance());
@@ -247,7 +248,7 @@ export default function ArchivePage() {
                   onClick={(e) => e.stopPropagation()}
                   className="rounded-2xl bg-white border border-slate-200 p-6 shadow-xl max-w-sm w-full"
                 >
-                  {lu < LU_ARCHIVE_BOOK_UNLOCK && lu < COST_PERMANENT_MEMORY_KEY ? (
+                  {lu < costMonthly && lu < COST_PERMANENT_MEMORY_KEY ? (
                     <>
                       <p className="text-sm font-bold mb-2" style={{ color: MIDNIGHT_BLUE }}>
                         퀘스트로 별조각을 모아 기록집을 완성하세요.
@@ -284,7 +285,7 @@ export default function ArchivePage() {
                           >
                             취소
                           </motion.button>
-                          {lu >= LU_ARCHIVE_BOOK_UNLOCK && (
+                          {lu >= costMonthly && (
                             <motion.button
                               type="button"
                               onClick={() => confirmUnlockMonth && unlockMonth(confirmUnlockMonth)}
@@ -298,7 +299,7 @@ export default function ArchivePage() {
                               transition={{ duration: 0.15 }}
                             >
                               <span className="inline-flex items-center text-[0.85em] leading-none" aria-hidden>{LU_ICON}</span>
-                              <span>{LU_ARCHIVE_BOOK_UNLOCK} 열람</span>
+                              <span>{costMonthly} 열람</span>
                             </motion.button>
                           )}
                           {lu >= COST_PERMANENT_MEMORY_KEY && (
@@ -338,7 +339,7 @@ export default function ArchivePage() {
                 const isUnlocked = slot.state === "unlocked";
                 const isInactive = slot.state === "inactive";
                 const isUnlockPending = slot.state === "unlock_pending";
-                const canUnlock = isUnlockPending && lu >= LU_ARCHIVE_BOOK_UNLOCK;
+                const canUnlock = isUnlockPending && lu >= costMonthly;
 
                 const monthOnly = slot.label.replace(/^\d+년\s*/, "");
                 const statusMessage = slot.isCurrentMonth
@@ -451,7 +452,7 @@ export default function ArchivePage() {
                                 boxShadow: canUnlock ? "0 0 10px rgba(253,230,138,0.5), 0 0 20px rgba(253,230,138,0.25)" : undefined,
                               }}
                             >
-                              {isUnlocked ? "열어보기" : `${LU_ICON} ${LU_ARCHIVE_BOOK_UNLOCK} 해금`}
+                              {isUnlocked ? "열어보기" : `${LU_ICON} ${costMonthly} 해금`}
                             </span>
                           )}
                         </div>

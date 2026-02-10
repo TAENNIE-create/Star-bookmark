@@ -84,7 +84,13 @@ export default function HomePage() {
   }
 
   return (
-    <div className="min-h-[100dvh] flex justify-center bg-transparent">
+    <motion.div
+      className="min-h-[100dvh] flex justify-center bg-transparent"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.5, ease: "easeOut" }}
+      style={{ willChange: "opacity" }}
+    >
       <div
         className="w-full max-w-md min-h-[100dvh] relative flex flex-col bg-transparent pb-24"
         style={{ color: MIDNIGHT_BLUE }}
@@ -100,9 +106,8 @@ export default function HomePage() {
 
         {/* 1구역: 밤하늘(Atlas) – 비율 4 (고정 높이 대신 flex) */}
         <motion.section
-          initial={{ opacity: 0 }}
+          initial={false}
           animate={{ opacity: 1 }}
-          transition={{ duration: 0.4 }}
           className="flex-[4] min-h-[min(28vh,200px)] max-h-[42vh] flex flex-col px-4 pb-4 overflow-hidden"
         >
           {activeTab === "home" && <MyRoom keywords={latestAnalysis?.keywords ?? null} />}
@@ -129,6 +134,6 @@ export default function HomePage() {
 
         <TabBar activeKey={activeTab} onChange={handleTabChange} />
       </div>
-    </div>
+    </motion.div>
   );
 }

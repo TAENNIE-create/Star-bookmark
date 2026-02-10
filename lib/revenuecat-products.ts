@@ -5,15 +5,16 @@
 
 import type { MembershipTier } from "./economy";
 
-/** 별조각 팩: RevenueCat product identifier → 구매 시 지급할 별조각 수 */
+/** 별조각 팩: RevenueCat product identifier → 구매 시 지급할 별조각 수. 가격: 100/1,500 300/3,900 600/6,900 */
 export const SHARD_PRODUCT_TO_AMOUNT: Record<string, number> = {
   shards_100: 100,
   shards_300: 300,
+  shards_600: 600,
   shards_700: 700,
-  // 대시보드에서 커스텀 ID 쓴 경우 여기 추가
   starter: 100,
   balance: 300,
   supporter: 700,
+  // 대시보드에서 커스텀 ID 쓴 경우 여기 추가
 };
 
 /** 멤버십 상품: RevenueCat product identifier → 등급 + 지급 별조각 */

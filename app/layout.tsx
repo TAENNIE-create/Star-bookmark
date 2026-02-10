@@ -5,6 +5,7 @@ import { CosmicLayoutWrapper } from "../components/arisum/cosmic-layout-wrapper"
 import { SupabaseStorageProvider } from "../components/arisum/supabase-storage-provider";
 import { RevenueCatProvider } from "../components/arisum/revenuecat-provider";
 import { AuthDeepLinkHandler } from "../components/arisum/auth-deep-link-handler";
+import { BackButtonHandler } from "../components/arisum/back-button-handler";
 import { StatusBarInit } from "../components/arisum/status-bar-init";
 import { StoreModalProvider } from "../components/arisum/store-modal-provider";
 
@@ -62,6 +63,7 @@ export default function RootLayout({
       <body className={`${a2zLight.className} antialiased`}>
         <StatusBarInit />
         <AuthDeepLinkHandler />
+        <BackButtonHandler />
         <SupabaseStorageProvider>
           <CosmicLayoutWrapper>
             <RevenueCatProvider>

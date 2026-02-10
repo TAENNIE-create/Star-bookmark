@@ -25,6 +25,8 @@ const TRAIT_CATEGORY_ICONS: Record<TraitCategory, string> = {
 import { getIdentityArchive, removeExtinctTraits, setTestTraitPositive15 } from "../../lib/identity-archive";
 import { getTraitLevel, getTraitLevelRecent, TRAIT_LEVEL_NAMES, type TraitLevel } from "../../lib/trait-level";
 import { LoadingOverlay } from "../../components/arisum/loading-overlay";
+import { getMembershipTier, MEMBERSHIP_ACCESS_DAYS, isDateAccessible } from "../../lib/economy";
+import { getUnlockedMonths } from "../../lib/archive-unlock";
 
 const SCORES_HISTORY_KEY = "arisum-scores-history";
 const JOURNALS_KEY = "arisum-journals";
@@ -585,11 +587,26 @@ export default function ConstellationPage() {
   }, [data, graduatedStarIds]);
   const visibleStarIds = useMemo(() => new Set(visibleStars.map((s) => s.id)), [visibleStars]);
 
+  /** 기억 범위 내 별만 연결: 등급(accessDays) + 기억의 열쇠 해금 월. 잠금된 시기는 별자리 선으로 이어지지 않음. */
+  const accessibleStarIds = useMemo(() => {
+    const tier = getMembershipTier();
+    const accessDays = MEMBERSHIP_ACCESS_DAYS[tier];
+    const unlockedMonths = new Set(getUnlockedMonths());
+    const ids = new Set<string>();
+    for (const s of data?.stars ?? []) {
+      const dateKey = getDateFromStarId(s.id);
+      if (dateKey && isDateAccessible(dateKey, accessDays, unlockedMonths)) ids.add(s.id);
+    }
+    return ids;
+  }, [data?.stars]);
+
   const { skyStars, skyConnections } = useMemo(() => {
     const skyIdSet = new Set(visibleStars.map((s) => s.id));
-    const skyConnectionsFiltered = (data?.connections ?? []).filter((c) => skyIdSet.has(c.from) && skyIdSet.has(c.to));
+    const skyConnectionsFiltered = (data?.connections ?? []).filter(
+      (c) => skyIdSet.has(c.from) && skyIdSet.has(c.to) && accessibleStarIds.has(c.from) && accessibleStarIds.has(c.to)
+    );
     return { skyStars: visibleStars, skyConnections: skyConnectionsFiltered };
-  }, [visibleStars, data?.connections]);
+  }, [visibleStars, data?.connections, accessibleStarIds]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -669,16 +686,19 @@ export default function ConstellationPage() {
     return withDist.map((x) => x.id);
   }
 
-  /** 지표 유사도 기반 연결 경로 (별자리별, 카테고리 색상 + 직선/곡선). 활성 별자리 모두 포함 */
+  /** 지표 유사도 기반 연결 경로 (별자리별, 카테고리 색상 + 직선/곡선). 기억 범위 내 별끼리만 선 연결. */
   const constellationPathsWithColor = useMemo(() => {
     const segments: { from: string; to: string; colorRgb: string; curved: boolean }[] = [];
+    const addSegment = (from: string, to: string, colorRgb: string, curved: boolean) => {
+      if (accessibleStarIds.has(from) && accessibleStarIds.has(to)) segments.push({ from, to, colorRgb, curved });
+    };
     for (const c of constellationsWithCategory) {
       const ordered = orderStarIdsBySimilarity(c.starIds);
       const info = CATEGORY_COLORS[c.categoryId as keyof typeof CATEGORY_COLORS];
       const colorRgb = info?.colorRgb ?? "253,230,138";
       const curved = c.categoryId === "flame" || c.categoryId === "galaxy";
       for (let i = 0; i < ordered.length - 1; i++) {
-        segments.push({ from: ordered[i]!, to: ordered[i + 1]!, colorRgb, curved });
+        addSegment(ordered[i]!, ordered[i + 1]!, colorRgb, curved);
       }
     }
     for (const ac of activeConstellations) {
@@ -688,14 +708,13 @@ export default function ConstellationPage() {
       const virtual = { id: ac.id, name: "", summary: "", starIds: visibleIds };
       const { categoryId } = assignCategory(virtual, scoresHistory);
       const info = CATEGORY_COLORS[categoryId as keyof typeof CATEGORY_COLORS] ?? CATEGORY_COLORS.reconcile;
-      const style = ac.connectionStyle ?? "B";
-      const curved = style === "B" || categoryId === "flame" || categoryId === "galaxy";
+      const curved = ac.connectionStyle === "B" || categoryId === "flame" || categoryId === "galaxy";
       for (let i = 0; i < ordered.length - 1; i++) {
-        segments.push({ from: ordered[i]!, to: ordered[i + 1]!, colorRgb: info.colorRgb, curved });
+        addSegment(ordered[i]!, ordered[i + 1]!, info.colorRgb, curved);
       }
     }
     return segments;
-  }, [constellationsWithCategory, activeConstellations, visibleStarIds, scoresHistory]);
+  }, [constellationsWithCategory, activeConstellations, visibleStarIds, accessibleStarIds, scoresHistory]);
 
   const topConstellations = useMemo(() => {
     const sorted = [...constellationsWithCategory].sort((a, b) => b.totalScore - a.totalScore);
@@ -768,11 +787,13 @@ export default function ConstellationPage() {
     return pts;
   }, [atlasStars]);
 
-  /** Atlas 연결선: 참고용. 실제 렌더는 mapSegmentsToDraw만 사용. */
+  /** Atlas 연결선: 참고용. 실제 렌더는 mapSegmentsToDraw만 사용. 기억 범위 내 날짜끼리만 연결. */
   const atlasConnections = useMemo(() => {
     if (!data?.connections?.length || atlasStars.length === 0) return [];
-    return data.connections.filter((c) => visibleStarIds.has(c.from) && visibleStarIds.has(c.to));
-  }, [data?.connections, visibleStarIds, atlasStars.length]);
+    return data.connections.filter(
+      (c) => visibleStarIds.has(c.from) && visibleStarIds.has(c.to) && accessibleStarIds.has(c.from) && accessibleStarIds.has(c.to)
+    );
+  }, [data?.connections, visibleStarIds, accessibleStarIds, atlasStars.length]);
 
   /** 활성 별자리별 메타: centroid, connectionStyle, categoryRgb, radialSegments(C일 때), 이름 위치(겹치지 않도록 오프셋) */
   const activeConstellationsMeta = useMemo(() => {

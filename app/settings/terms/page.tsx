@@ -77,6 +77,20 @@ export default function TermsPage() {
               className="text-base font-semibold mb-2"
               style={{ fontFamily: "var(--font-a2z-m), sans-serif" }}
             >
+              제2조의2 (기록 보존 및 열람)
+            </h2>
+            <p style={{ color: MIDNIGHT_BLUE }}>
+              이용자의 모든 기록은 서버에 안전하게 보존됩니다. 멤버십 등급에 따라 과거 기록에
+              대한 &#39;열람 및 AI 분석&#39; 권한만 제한되며, 기록 자체는 삭제되지 않습니다.
+              기억의 열쇠(별조각 소모) 또는 멤버십 업그레이드로 열람 범위를 확장할 수 있습니다.
+            </p>
+          </section>
+
+          <section>
+            <h2
+              className="text-base font-semibold mb-2"
+              style={{ fontFamily: "var(--font-a2z-m), sans-serif" }}
+            >
               제3조 (면책 조항)
             </h2>
             <p style={{ color: MIDNIGHT_BLUE }}>

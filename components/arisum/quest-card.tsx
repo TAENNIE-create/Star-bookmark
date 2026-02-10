@@ -5,13 +5,15 @@ import { motion, AnimatePresence } from "framer-motion";
 import { LU_ICON, MIDNIGHT_BLUE } from "../../lib/theme";
 import {
   getLuBalance,
-  setLuBalance,
+  addLu,
+  subtractLu,
   getTodayQuestLuEarned,
   addTodayQuestLuEarned,
-  subtractTodayQuestLuEarned,
-  LU_PER_QUEST_COMPLETE,
-  MAX_DAILY_QUEST_LU,
+  subtractTodayQuestLuEarnedByOne,
+  getQuestRewardShards,
+  getMaxDailyQuestShards,
 } from "../../lib/lu-balance";
+import { getMembershipTier } from "../../lib/economy";
 import { getQuestsForDate } from "../../lib/quest-storage";
 import { getAppStorage } from "../../lib/app-storage";
 
@@ -86,14 +88,17 @@ export function QuestCard() {
   }, []);
 
   const handleToggle = (questId: string, checked: boolean) => {
+    const tier = getMembershipTier();
+    const maxDaily = getMaxDailyQuestShards(tier);
+    const perQuest = getQuestRewardShards(tier);
     const earned = getTodayQuestLuEarned();
     if (checked) {
-      if (earned >= MAX_DAILY_QUEST_LU) return; // 하루 최대 별조각 60개
-      addTodayQuestLuEarned(LU_PER_QUEST_COMPLETE);
-      setLuBalance(getLuBalance() + LU_PER_QUEST_COMPLETE);
+      if (earned >= maxDaily) return;
+      addLu(perQuest);
+      addTodayQuestLuEarned();
     } else {
-      subtractTodayQuestLuEarned(LU_PER_QUEST_COMPLETE);
-      setLuBalance(Math.max(0, getLuBalance() - LU_PER_QUEST_COMPLETE));
+      subtractLu(perQuest);
+      subtractTodayQuestLuEarnedByOne();
     }
     setDone((prev) => ({ ...prev, [questId]: checked }));
     setDailyQuestDone(questId, checked);
@@ -116,7 +121,7 @@ export function QuestCard() {
             className="absolute left-1/2 top-0 -translate-x-1/2 pointer-events-none z-10 flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 shadow-md"
             style={{ color: MIDNIGHT_BLUE }}
           >
-            <span className="text-sm font-bold">+{LU_PER_QUEST_COMPLETE}</span>
+            <span className="text-sm font-bold">+{getQuestRewardShards(getMembershipTier())}</span>
             <span className="text-amber-600">{LU_ICON}</span>
           </motion.div>
         )}
@@ -169,7 +174,7 @@ export function QuestCard() {
                   {todayQuests.map((q) => {
                     const isDone = done[q.id];
                     const earned = getTodayQuestLuEarned();
-                    const canComplete = !isDone && earned < MAX_DAILY_QUEST_LU;
+                    const canComplete = !isDone && earned < getMaxDailyQuestShards(getMembershipTier());
                     return (
                       <li
                         key={q.id}
@@ -201,7 +206,7 @@ export function QuestCard() {
                               className={`text-[10px] font-semibold mt-1 ${isDone ? "" : "opacity-50"}`}
                               style={{ color: DEEP_GOLD }}
                             >
-                              +{LU_PER_QUEST_COMPLETE} ✦
+                              +{getQuestRewardShards(getMembershipTier())} ✦
                             </span>
                           </div>
                         </div>

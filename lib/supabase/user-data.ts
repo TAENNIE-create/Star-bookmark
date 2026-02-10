@@ -88,6 +88,7 @@ export const MIGRATABLE_KEYS = [
   "arisum-quests",
   "arisum-personality-profile",
   "constellation_registry",
+  "arisum-membership-tier",
 ] as const;
 
 const KEY_PREFIX_QUESTS = "arisum-quests-";

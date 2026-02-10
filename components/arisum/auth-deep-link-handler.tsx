@@ -30,7 +30,7 @@ function isLoginCallbackUrl(url: string): boolean {
   return Boolean(url && url.startsWith(LOGIN_CALLBACK_SCHEME));
 }
 
-/** 딥링크 URL 처리: 토큰 파싱 → setSession → 브라우저 닫기 → 설정 화면으로 */
+/** 딥링크 URL 처리: 토큰 파싱 → setSession → getSession 확정 → 브라우저 닫기 → 새로고침으로 UI 갱신 */
 async function handleLoginCallbackUrl(url: string, router: ReturnType<typeof useRouter>) {
   if (!isLoginCallbackUrl(url)) return false;
   const { access_token, refresh_token } = parseTokensFromUrl(url);
@@ -38,6 +38,10 @@ async function handleLoginCallbackUrl(url: string, router: ReturnType<typeof use
   try {
     const supabase = createClient();
     await supabase.auth.setSession({ access_token, refresh_token });
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      console.warn("[AuthDeepLink] setSession 후 getSession이 비어 있음");
+    }
     try {
       const { Browser } = await import("@capacitor/browser");
       await Browser.close();
@@ -45,6 +49,9 @@ async function handleLoginCallbackUrl(url: string, router: ReturnType<typeof use
       // Browser가 열려 있지 않으면 무시
     }
     router.replace("/settings");
+    if (typeof window !== "undefined") {
+      window.location.reload();
+    }
     return true;
   } catch (e) {
     console.error("[AuthDeepLink] setSession failed:", e);

@@ -1,4 +1,8 @@
-/** 기록함 월간 기록집 해금 상태 (Supabase 또는 localStorage) */
+/**
+ * 기록함 월간 기록집 해금 상태 (Supabase 또는 localStorage).
+ * 모든 기록은 서버에 안전하게 보존되며, 등급에 따라 열람·분석 권한만 제어됩니다.
+ * 기억의 열쇠(별조각 200)로 해금한 달은 등급에 상관없이 항상 기억 범위에 포함됩니다.
+ */
 
 import { getAppStorage } from "./app-storage";
 

@@ -88,28 +88,39 @@ function NebulaGlow() {
   );
 }
 
-function SupernovaEffect({ onComplete }: { onComplete: () => void }) {
+/** 화면 중앙에서 샴페인 골드 빛이 화면 전체를 덮을 때까지 확장 (Supernova) */
+function SupernovaEffect({ onNavigate }: { onNavigate: () => void }) {
+  useEffect(() => {
+    const t = window.setTimeout(onNavigate, 600);
+    return () => clearTimeout(t);
+  }, [onNavigate]);
+
   return (
     <motion.div
       className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      transition={{ duration: 0.3 }}
+      transition={{ duration: 0.05 }}
+      style={{ willChange: "opacity" }}
     >
       <motion.div
-        className="absolute w-4 h-4 rounded-full bg-white"
-        style={{ boxShadow: "0 0 60px 30px rgba(255,249,196,0.8)" }}
-        initial={{ scale: 0, opacity: 1 }}
+        className="absolute rounded-full"
+        style={{
+          width: 120,
+          height: 120,
+          background: "radial-gradient(circle, rgba(255,255,255,0.98) 0%, rgba(253,230,138,0.95) 40%, rgba(253,230,138,0.85) 100%)",
+          boxShadow: "0 0 80px 50px rgba(253,230,138,0.9)",
+          willChange: "transform, opacity",
+        }}
+        initial={{ scale: 0, opacity: 0.9 }}
         animate={{
-          scale: [0, 2, 15, 25],
-          opacity: [1, 1, 0.8, 0],
+          scale: 12,
+          opacity: 1,
         }}
         transition={{
-          duration: 1.4,
-          ease: [0.25, 0.46, 0.45, 0.94],
-          times: [0, 0.3, 0.7, 1],
+          duration: 0.8,
+          ease: "easeIn",
         }}
-        onAnimationComplete={onComplete}
       />
     </motion.div>
   );
@@ -182,7 +193,7 @@ export default function OnboardingPage() {
     setStep(6);
   }, [userName]);
 
-  const handleSupernovaComplete = useCallback(() => {
+  const handleSupernovaNavigate = useCallback(() => {
     router.push("/");
   }, [router]);
 
@@ -303,7 +314,7 @@ export default function OnboardingPage() {
       </div>
 
       <AnimatePresence>
-        {showSupernova && <SupernovaEffect onComplete={handleSupernovaComplete} />}
+        {showSupernova && <SupernovaEffect onNavigate={handleSupernovaNavigate} />}
       </AnimatePresence>
     </div>
   );

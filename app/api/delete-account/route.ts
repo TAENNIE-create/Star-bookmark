@@ -9,7 +9,8 @@ export async function OPTIONS() {
 }
 
 /**
- * POST: 현재 로그인한 사용자 계정 삭제 (Supabase Auth + profiles/user_data는 cascade로 삭제됨)
+ * POST: 현재 로그인한 사용자 계정 삭제 (스토어 필수 규정).
+ * Supabase Auth auth.users 삭제 시, FK on delete cascade로 profiles·user_data(일기, 별자리, 별조각, 성격 카운트 등)가 물리적으로 함께 삭제됩니다.
  * 쿠키 세션 또는 Authorization: Bearer 토큰으로 본인 확인 후, service role로 auth.users 삭제.
  * (Capacitor 앱에서는 쿠키가 API 도메인으로 안 가므로 Bearer 토큰 사용)
  */

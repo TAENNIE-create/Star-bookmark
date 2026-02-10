@@ -8,8 +8,8 @@ import type { MoodScores } from "../../lib/arisum-types";
 import { MIDNIGHT_BLUE, MUTED, CARD_BG, LU_ICON } from "../../lib/theme";
 import { getAnalyzeApiUrl } from "../../lib/api-client";
 import { getLuBalance, subtractLu, addLu, LU_DAILY_REPORT_UNLOCK, LU_REANALYZE } from "../../lib/lu-balance";
-import { getMembershipTier, MEMBERSHIP_ACCESS_DAYS, isDateAccessible, getRequiredShards } from "../../lib/economy";
-import { getUnlockedMonths } from "../../lib/archive-unlock";
+import { getMembershipTier, MEMBERSHIP_ACCESS_DAYS, isDateAccessible, getRequiredShards, COST_PERMANENT_MEMORY_KEY } from "../../lib/economy";
+import { getUnlockedMonths, setUnlockedMonths } from "../../lib/archive-unlock";
 import { getUserName } from "../../lib/home-greeting";
 import { getQuestsForDate, setQuestsForDate } from "../../lib/quest-storage";
 import { getCurrentConstellation, mergeAtlasWithNewStar, setCurrentConstellation, setActiveConstellations, type ActiveConstellation, type CurrentConstellation } from "../../lib/atlas-storage";
@@ -348,7 +348,7 @@ function DiaryCalendarContent() {
     const lu = getLuBalance();
     if (lu < cost) {
       if (typeof window !== "undefined") {
-        window.alert("별조각이 부족하여 기록을 읽을 수 없습니다");
+        openStoreModal();
       }
       return;
     }
@@ -548,7 +548,7 @@ function DiaryCalendarContent() {
         code: err?.status ?? "ERROR",
         message: err?.message ?? String(error),
       }, error);
-      setAnalysisErrorMessage("별지기와의 통신이 원활하지 않습니다. 다시 시도해 주세요.");
+      setAnalysisErrorMessage("잠시 별지기가 멀리 있어요. 네트워크를 확인해 주시거나 잠시 후 다시 불러 주세요.");
       setReportData({
         date: dateKey,
         todayFlow: null,
@@ -628,7 +628,7 @@ function DiaryCalendarContent() {
       } catch (fetchErr) {
         const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
         console.error("[다시 분석] fetch 실패:", { code: "NETWORK_ERROR", message: msg, url: analyzeUrlRe }, fetchErr);
-        setAnalysisErrorMessage("별지기와의 통신이 원활하지 않습니다. 다시 시도해 주세요.");
+        setAnalysisErrorMessage("잠시 별지기가 멀리 있어요. 네트워크를 확인해 주시거나 잠시 후 다시 불러 주세요.");
         setIsReanalyzing(false);
         return;
       }
@@ -640,7 +640,7 @@ function DiaryCalendarContent() {
           bodyText = "(응답 본문 읽기 실패)";
         }
         console.error("[다시 분석] API 오류:", { status: res.status, statusText: res.statusText, message: bodyText?.slice(0, 200) ?? "", url: analyzeUrlRe });
-        setAnalysisErrorMessage("별지기와의 통신이 원활하지 않습니다. 다시 시도해 주세요.");
+        setAnalysisErrorMessage("잠시 별지기가 멀리 있어요. 네트워크를 확인해 주시거나 잠시 후 다시 불러 주세요.");
         setIsReanalyzing(false);
         return;
       }
@@ -649,13 +649,13 @@ function DiaryCalendarContent() {
         analyzeData = await res.json();
       } catch (parseErr) {
         console.error("[다시 분석] 응답 JSON 파싱 실패:", parseErr);
-        setAnalysisErrorMessage("별지기와의 통신이 원활하지 않습니다. 다시 시도해 주세요.");
+        setAnalysisErrorMessage("잠시 별지기가 멀리 있어요. 네트워크를 확인해 주시거나 잠시 후 다시 불러 주세요.");
         setIsReanalyzing(false);
         return;
       }
       if (!analyzeData || typeof analyzeData !== "object") {
         console.error("[다시 분석] AI 응답 비정상 (객체 아님):", typeof analyzeData, analyzeData);
-        setAnalysisErrorMessage("별지기와의 통신이 원활하지 않습니다. 다시 시도해 주세요.");
+        setAnalysisErrorMessage("잠시 별지기가 멀리 있어요. 네트워크를 확인해 주시거나 잠시 후 다시 불러 주세요.");
         setIsReanalyzing(false);
         return;
       }
@@ -1086,7 +1086,7 @@ function DiaryCalendarContent() {
                             <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
                             <path d="M16 21h5v-5" />
                           </svg>
-                          다시 분석하기 ✨ 별조각 15
+                          다시 분석하기 ✨ {costRe} 별조각
                         </button>
                       </div>
                     )}
@@ -1287,7 +1287,16 @@ function DiaryCalendarContent() {
                   별조각 {costRe}개를 사용해 이 날의 기록을 밤하늘에 올리시겠어요?
                 </p>
                 {getLuBalance() < costRe && (
-                  <p className="text-xs text-amber-600 text-center mb-4">별조각이 부족해요</p>
+                  <p className="text-xs text-amber-600 text-center mb-2">별조각이 부족해요</p>
+                )}
+                {getLuBalance() < costRe && (
+                  <button
+                    type="button"
+                    onClick={() => { openStoreModal(); setShowReanalyzeModal(false); }}
+                    className="text-xs font-medium text-amber-700 underline mb-4"
+                  >
+                    별조각 구매하기
+                  </button>
                 )}
                 <div className="flex gap-3 mt-4">
                   <button
@@ -1313,50 +1322,70 @@ function DiaryCalendarContent() {
           )}
         </AnimatePresence>
 
-        {/* 시간의 봉인: 열람 기간 지난 날짜 클릭 시 해금 유도 */}
+        {/* 시간의 봉인: 기억 범위 밖 날짜 클릭 시 — 기억 깨우기(200별조각) 또는 멤버십 유도 */}
         <AnimatePresence>
-          {sealedDateKey && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F172A]/50 backdrop-blur-sm px-4"
-              onClick={() => setSealedDateKey(null)}
-            >
+          {sealedDateKey && (() => {
+            const yearMonth = sealedDateKey.slice(0, 7);
+            const canUnlock = getLuBalance() >= COST_PERMANENT_MEMORY_KEY;
+            const handleUnlockMonth = () => {
+              if (!canUnlock) return;
+              if (!subtractLu(COST_PERMANENT_MEMORY_KEY)) return;
+              const months = getUnlockedMonths();
+              if (!months.includes(yearMonth)) setUnlockedMonths([...months, yearMonth]);
+              window.dispatchEvent(new Event("lu-balance-updated"));
+              setSealedDateKey(null);
+            };
+            return (
               <motion.div
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.95, opacity: 0 }}
-                onClick={(e) => e.stopPropagation()}
-                className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F172A]/50 backdrop-blur-sm px-4"
+                onClick={() => setSealedDateKey(null)}
               >
-                <p className="text-sm leading-relaxed text-center mb-2" style={{ color: MIDNIGHT_BLUE }}>
-                  이 날짜는 현재 멤버십으로 열람 기간이 지났어요.
-                </p>
-                <p className="text-xs text-center mb-4" style={{ color: MUTED }}>
-                  멤버십을 올리거나, 기록함에서 기억의 열쇠로 해당 달을 영구 해금할 수 있어요.
-                </p>
-                <div className="flex gap-3 mt-4">
-                  <button
-                    type="button"
-                    onClick={() => setSealedDateKey(null)}
-                    className="flex-1 rounded-xl py-2.5 text-sm font-medium border border-[#E2E8F0] transition-colors hover:bg-[#F8FAFC]"
-                    style={{ color: MIDNIGHT_BLUE }}
-                  >
-                    닫기
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { openStoreModal(); setSealedDateKey(null); }}
-                    className="flex-1 rounded-xl py-2.5 text-sm font-medium text-white transition-colors"
-                    style={{ backgroundColor: MIDNIGHT_BLUE }}
-                  >
-                    멤버십·상점
-                  </button>
-                </div>
+                <motion.div
+                  initial={{ scale: 0.95, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.95, opacity: 0 }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl"
+                >
+                  <p className="text-sm leading-relaxed text-center mb-2" style={{ color: MIDNIGHT_BLUE }}>
+                    별지기의 기억 너머에 있는 기록입니다. 별조각으로 기억을 깨우거나 멤버십으로 우주 전체를 연결해 보세요.
+                  </p>
+                  <div className="flex flex-col gap-3 mt-4">
+                    <button
+                      type="button"
+                      onClick={handleUnlockMonth}
+                      disabled={!canUnlock}
+                      className="w-full rounded-xl py-2.5 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ backgroundColor: canUnlock ? MIDNIGHT_BLUE : "#94A3B8" }}
+                    >
+                      기억 깨우기 ({COST_PERMANENT_MEMORY_KEY}별조각 · 이 달 영구 해금)
+                    </button>
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setSealedDateKey(null)}
+                        className="flex-1 rounded-xl py-2.5 text-sm font-medium border border-[#E2E8F0] transition-colors hover:bg-[#F8FAFC]"
+                        style={{ color: MIDNIGHT_BLUE }}
+                      >
+                        닫기
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { openStoreModal(); setSealedDateKey(null); }}
+                        className="flex-1 rounded-xl py-2.5 text-sm font-medium text-white transition-colors"
+                        style={{ backgroundColor: MIDNIGHT_BLUE }}
+                      >
+                        멤버십·상점
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
               </motion.div>
-            </motion.div>
-          )}
+            );
+          })()}
         </AnimatePresence>
 
         {/* 7회 확정 성격 축하 팝업 — 고대비 프리미엄 */}

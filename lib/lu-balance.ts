@@ -1,7 +1,13 @@
 /** 별조각 재화 – user_lu_balance (Supabase 또는 localStorage) */
 
 import { getAppStorage } from "./app-storage";
-import { INITIAL_SHARDS, MAX_DAILY_QUEST_SHARDS } from "./economy";
+import {
+  INITIAL_SHARDS,
+  MAX_DAILY_QUEST_SHARDS,
+  getMembershipTier,
+  getQuestRewardShards,
+  getMaxDailyQuestShards,
+} from "./economy";
 
 export const USER_LU_BALANCE_KEY = "user_lu_balance";
 const INITIAL_LU = INITIAL_SHARDS;
@@ -52,7 +58,7 @@ export function subtractLu(amount: number): boolean {
   return true;
 }
 
-/** 오늘 퀘스트로 벌어든 별조각 (최대 MAX_DAILY_QUEST_SHARDS) */
+/** 오늘 퀘스트로 벌어든 별조각. 등급별 상한(30/60) 적용. */
 const DAILY_QUEST_LU_KEY = "arisum-daily-quest-lu-earned";
 
 export function getTodayQuestLuEarned(): number {
@@ -61,17 +67,25 @@ export function getTodayQuestLuEarned(): number {
     const raw = getAppStorage().getItem(DAILY_QUEST_LU_KEY);
     const data = raw ? JSON.parse(raw) : {};
     if (data.date !== getTodayKey()) return 0;
-    return Math.min(MAX_DAILY_QUEST_SHARDS, Math.max(0, data.amount ?? 0));
+    const tier = getMembershipTier();
+    const cap = getMaxDailyQuestShards(tier);
+    return Math.min(cap, Math.max(0, data.amount ?? 0));
   } catch {
     return 0;
   }
 }
 
-export function addTodayQuestLuEarned(amount: number): boolean {
+/** 퀘스트 1회 완료 시 호출. 등급별 보상(10/20) 지급, 하루 상한(30/60) 적용. */
+export function addTodayQuestLuEarned(): boolean {
   if (typeof window === "undefined") return false;
   const today = getTodayKey();
-  const current = getTodayQuestLuEarned();
-  const next = Math.min(MAX_DAILY_QUEST_SHARDS, current + amount);
+  const raw = getAppStorage().getItem(DAILY_QUEST_LU_KEY);
+  const data = raw ? JSON.parse(raw) : {};
+  const current = data.date === today ? Math.max(0, data.amount ?? 0) : 0;
+  const tier = getMembershipTier();
+  const amount = getQuestRewardShards(tier);
+  const cap = getMaxDailyQuestShards(tier);
+  const next = Math.min(cap, current + amount);
   if (next === current) return false;
   getAppStorage().setItem(
     DAILY_QUEST_LU_KEY,
@@ -80,11 +94,29 @@ export function addTodayQuestLuEarned(amount: number): boolean {
   return true;
 }
 
-export function subtractTodayQuestLuEarned(amount: number) {
+/** 퀘스트 완료 취소 시 호출. 등급별 1회분(10/20) 차감. */
+export function subtractTodayQuestLuEarnedByOne(): void {
   if (typeof window === "undefined") return;
   const today = getTodayKey();
-  const current = getTodayQuestLuEarned();
-  const next = Math.max(0, current - amount);
+  const raw = getAppStorage().getItem(DAILY_QUEST_LU_KEY);
+  const data = raw ? JSON.parse(raw) : {};
+  if (data.date !== today) return;
+  const tier = getMembershipTier();
+  const amount = getQuestRewardShards(tier);
+  const next = Math.max(0, (data.amount ?? 0) - amount);
+  getAppStorage().setItem(
+    DAILY_QUEST_LU_KEY,
+    JSON.stringify({ date: today, amount: next })
+  );
+}
+
+export function subtractTodayQuestLuEarned(amount: number): void {
+  if (typeof window === "undefined") return;
+  const today = getTodayKey();
+  const raw = getAppStorage().getItem(DAILY_QUEST_LU_KEY);
+  const data = raw ? JSON.parse(raw) : {};
+  if (data.date !== today) return;
+  const next = Math.max(0, (data.amount ?? 0) - amount);
   getAppStorage().setItem(
     DAILY_QUEST_LU_KEY,
     JSON.stringify({ date: today, amount: next })
@@ -93,6 +125,8 @@ export function subtractTodayQuestLuEarned(amount: number) {
 
 export {
   MAX_DAILY_QUEST_SHARDS,
+  getQuestRewardShards,
+  getMaxDailyQuestShards,
   SHARDS_PER_QUEST as LU_PER_QUEST_COMPLETE,
   COST_DAILY_ANALYSIS as LU_DAILY_REPORT_UNLOCK,
   COST_RE_ANALYSIS as LU_REANALYZE,
