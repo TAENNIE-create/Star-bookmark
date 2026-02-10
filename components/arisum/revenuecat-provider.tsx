@@ -13,6 +13,7 @@ import type { PurchasesOfferings, PurchasesPackage } from "@revenuecat/purchases
 import {
   isNativeRevenueCatAvailable,
   configureRevenueCat,
+  logInRevenueCat,
   getCustomerInfo,
   getOfferings as rcGetOfferings,
   purchasePackage as rcPurchasePackage,
@@ -25,6 +26,7 @@ import {
   presentCustomerCenter as rcPresentCustomerCenter,
   restorePurchases as rcRestorePurchases,
 } from "../../lib/revenuecat";
+import { createClient } from "../../lib/supabase/client";
 import { getMembershipForProduct } from "../../lib/revenuecat-products";
 import { setMembershipTier } from "../../lib/economy";
 import { getAppStorage } from "../../lib/app-storage";
@@ -149,6 +151,20 @@ export function RevenueCatProvider({ children }: { children: React.ReactNode }) 
     };
   }, [isAvailable]);
 
+  /* 로그인 시 RevenueCat에 사용자 ID 연동 (구독 기기·계정 공유) */
+  useEffect(() => {
+    if (!isAvailable) return;
+    const supabase = createClient();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        if (session?.user?.id) {
+          await logInRevenueCat(session.user.id);
+        }
+      }
+    );
+    return () => subscription.unsubscribe();
+  }, [isAvailable]);
+
   useEffect(() => {
     return () => {
       if (listenerId) {
@@ -216,6 +232,11 @@ export function RevenueCatProvider({ children }: { children: React.ReactNode }) 
   const purchasePackage = useCallback(
     async (pkg: PurchasesPackage) => {
       if (!isAvailable) return;
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error("로그인 후 구매할 수 있습니다.");
+      }
       const { customerInfo: info, productIdentifier } =
         await rcPurchasePackage(pkg);
       setCustomerInfo(info);

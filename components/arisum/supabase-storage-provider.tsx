@@ -20,13 +20,7 @@ export function SupabaseStorageProvider({ children }: { children: React.ReactNod
     mounted.current = true;
     const supabase = createClient();
 
-    supabase.auth.getUser().then(({ data }) => {
-      const user = data?.user;
-      if (!user) {
-        setAppStorage(null);
-        return;
-      }
-      const userId = user.id;
+    function initStorage(userId: string) {
       migrateLocalStorageToSupabase(supabase, userId)
         .then(() => getAll(supabase, userId))
         .then((all) => {
@@ -61,9 +55,28 @@ export function SupabaseStorageProvider({ children }: { children: React.ReactNod
             },
           });
         });
+    }
+
+    supabase.auth.getUser().then(({ data }) => {
+      const user = data?.user;
+      if (!user) {
+        setAppStorage(null);
+        return;
+      }
+      initStorage(user.id);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session?.user) {
+        setAppStorage(null);
+        cacheRef.current = {};
+        return;
+      }
+      initStorage(session.user.id);
     });
 
     return () => {
+      subscription.unsubscribe();
       setAppStorage(null);
     };
   }, []);

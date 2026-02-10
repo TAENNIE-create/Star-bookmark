@@ -2,6 +2,33 @@
 
 Capacitor 네이티브(Android/iOS)에서 RevenueCat SDK로 구독·엔틀리먼트를 처리합니다.
 
+## Google Play 연결만 하면 결제가 되나요?
+
+**네.** 아래 조건을 맞추면 앱에서 “구매하기”/“구독하기” 버튼을 누를 때 Google Play 결제창이 뜨고, 결제 성공 시 별조각·멤버십이 Supabase에 반영됩니다.
+
+### 체크리스트 (Google Play)
+
+1. **Google Play Console**
+   - 앱 등록 후 **수익 창출 설정** → **제품**에서 인앱 상품/구독 생성.
+   - 상품 ID를 `lib/revenuecat-products.ts`와 **동일하게** 사용 (예: `shards_100`, `starter`, `membership_short_story`, `short_story` 등).
+   - 테스트용 **라이선스 테스트** 계정 추가 권장.
+
+2. **RevenueCat 대시보드**
+   - **Project** → **Apps** → Android 앱 추가 (또는 기존 앱 선택).
+   - **Google Play** 연결: 서비스 계정 JSON 업로드 또는 연동 완료.
+   - **Products**에 위와 같은 Product ID 등록 후 Android 앱에 연결.
+   - **Offerings**에 패키지 구성 (멤버십·별조각 팩).
+
+3. **앱 측**
+   - `NEXT_PUBLIC_REVENUECAT_API_KEY`에 RevenueCat **프로덕션** API 키 설정 (Android용).
+   - 결제는 **로그인한 사용자만** 가능합니다. 비로그인 시 “로그인 후 구매할 수 있습니다” 메시지가 뜨며 결제창은 열리지 않습니다.
+   - 로그인 시 RevenueCat `logIn(supabaseUserId)`로 연동되어, 구독이 계정에 묶입니다.
+
+4. **결제 흐름**
+   - 스토어 모달 → 구매하기/구독하기 → `Purchases.purchasePackage(pkg)` → Google 결제창 → 성공 시 `syncPurchaseAfterPayment`로 `profiles.lu_balance`·`membership_status` 및 `user_data` 갱신.
+
+---
+
 ## 환경 변수
 
 - **`NEXT_PUBLIC_REVENUECAT_API_KEY`**  

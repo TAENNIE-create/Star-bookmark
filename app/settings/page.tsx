@@ -8,6 +8,7 @@ import { TabBar, type TabKey } from "../../components/arisum/tab-bar";
 import { MIDNIGHT_BLUE, MUTED, BORDER_LIGHT, SKY_WHITE } from "../../lib/theme";
 import { getAppStorage } from "../../lib/app-storage";
 import { createClient } from "../../lib/supabase/client";
+import { getApiUrl } from "../../lib/api-client";
 
 const ONBOARDING_KEY = "arisum-onboarding";
 const REMINDER_TIME_KEY = "arisum-reminder-time";
@@ -39,6 +40,8 @@ export default function SettingsPage() {
   const [reminderTime, setReminderTime] = useState("22:00");
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
+  const [withdrawing, setWithdrawing] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -108,15 +111,36 @@ export default function SettingsPage() {
     clearAllLocalDataAndRedirect(router);
   };
 
-  const handleWithdraw = () => {
+  const handleWithdraw = async () => {
     if (!confirmWithdraw) {
       setConfirmWithdraw(true);
+      setWithdrawError(null);
       return;
     }
-    setConfirmWithdraw(false);
     if (typeof window === "undefined") return;
-    clearAllLocalDataAndRedirect(router);
-    createClient().auth.signOut();
+    setWithdrawing(true);
+    setWithdrawError(null);
+    const supabase = createClient();
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token ?? null;
+      const res = await fetch(getApiUrl("/api/delete-account"), {
+        method: "POST",
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { error?: string }).error ?? "계정 삭제에 실패했습니다.");
+      }
+      setConfirmWithdraw(false);
+      await supabase.auth.signOut();
+      clearAllLocalDataAndRedirect(router);
+    } catch (e) {
+      setWithdrawError(e instanceof Error ? e.message : "계정 삭제에 실패했습니다.");
+    } finally {
+      setWithdrawing(false);
+    }
   };
 
   const Card = ({
@@ -445,10 +469,14 @@ export default function SettingsPage() {
             <p className="text-xs mb-4" style={{ color: MUTED }}>
               복구할 수 없습니다.
             </p>
+            {withdrawError && (
+              <p className="text-xs text-red-600 mb-3">{withdrawError}</p>
+            )}
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => setConfirmWithdraw(false)}
+                disabled={withdrawing}
                 className="flex-1 py-2.5 rounded-xl text-sm font-medium border"
                 style={{ borderColor: BORDER_LIGHT, color: MIDNIGHT_BLUE }}
               >
@@ -457,10 +485,11 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={handleWithdraw}
-                className="flex-1 py-2.5 rounded-xl text-sm font-medium text-white"
+                disabled={withdrawing}
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium text-white disabled:opacity-60"
                 style={{ backgroundColor: "#dc2626" }}
               >
-                탈퇴
+                {withdrawing ? "처리 중…" : "탈퇴"}
               </button>
             </div>
           </motion.div>

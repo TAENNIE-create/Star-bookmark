@@ -39,7 +39,15 @@
 
 ---
 
-## 4. 별조각 차감 (원자적 동작)
+## 4. 계정 탈퇴 (delete-account API)
+
+- **설정 → 계정 탈퇴** 시 `/api/delete-account`가 호출되며, Supabase Auth 사용자와 연동된 데이터(profiles, user_data는 `on delete cascade`로 함께 삭제)가 삭제됩니다.
+- API 서버(Netlify 등) 환경 변수에 **`SUPABASE_SERVICE_ROLE_KEY`**를 설정해야 합니다. (Supabase 대시보드 → Settings → API → service_role key)
+- 웹은 쿠키, APK/Capacitor는 `Authorization: Bearer <access_token>`으로 본인 확인 후 삭제합니다.
+
+---
+
+## 5. 별조각 차감 (원자적 동작)
 
 - **일기 해금·재분석·인터뷰/사진/음성 일기 생성** 등: **API 호출이 성공한 뒤에만** 별조각을 차감합니다.
 - API 실패 시 별조각은 차감되지 않으며, 사용자가 별조각만 잃는 상황은 발생하지 않습니다.

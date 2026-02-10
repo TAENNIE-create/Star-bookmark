@@ -41,6 +41,16 @@ export async function configureRevenueCat(appUserId?: string | null): Promise<vo
   }
 }
 
+/** 로그인한 사용자 ID로 RevenueCat 연동 (기기·계정 간 구독 공유). configure 이후 로그인 시 한 번 호출 */
+export async function logInRevenueCat(appUserId: string): Promise<void> {
+  if (!isNativeRevenueCatAvailable()) return;
+  try {
+    await Purchases.logIn({ appUserID: appUserId });
+  } catch (e) {
+    console.error("[RevenueCat] logIn failed:", e);
+  }
+}
+
 /** 현재 고객 정보 조회 */
 export async function getCustomerInfo(): Promise<CustomerInfo | null> {
   if (!isNativeRevenueCatAvailable()) return null;
