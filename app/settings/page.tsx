@@ -46,6 +46,7 @@ export default function SettingsPage() {
   const [nickname, setNickname] = useState("");
   const [saved, setSaved] = useState(false);
   const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [reminderTime, setReminderTime] = useState<string>("22:00");
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
@@ -55,7 +56,10 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => setUser(data?.user ?? null));
+    supabase.auth.getUser().then(({ data }) => {
+      setUser(data?.user ?? null);
+      setAuthChecked(true);
+    });
     const unsub = supabase.auth.onAuthStateChange((_e, session) => setUser(session?.user ?? null));
     return () => unsub.data.subscription.unsubscribe();
   }, []);
@@ -266,7 +270,11 @@ export default function SettingsPage() {
             >
               계정
             </h2>
-            {isMigrating ? (
+            {!authChecked ? (
+              <p className="text-sm py-4 text-center" style={{ color: MUTED }}>
+                계정 정보를 불러오는 중...
+              </p>
+            ) : isMigrating ? (
               <p className="text-sm py-4 text-center" style={{ color: MUTED }}>
                 데이터를 동기화하고 있어요...
               </p>

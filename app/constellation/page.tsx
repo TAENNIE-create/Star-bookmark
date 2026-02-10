@@ -1419,7 +1419,7 @@ export default function ConstellationPage() {
                       <span aria-hidden style={{ fontSize: "10px" }}>{TRAIT_CATEGORY_ICONS[cat]}</span>
                       {catLabel}
                     </span>
-                    <span className="text-[11px] text-slate-400 font-normal">
+                    <span className="text-[11px] text-slate-400 font-normal inline-block text-right tabular-nums" style={{ minWidth: "2.5rem" }}>
                       {count > 0 ? `${count}개` : "0개"}
                       {maxLevelName != null ? ` · ${maxLevelName}` : ""}
                     </span>

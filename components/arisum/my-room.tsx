@@ -33,10 +33,10 @@ function getJournalCount(): number {
   }
 }
 
-/** 자아 동기화율: 전체 일기 수에 비례 0~100% (50편 = 100%) */
+/** 자아 동기화율: 전체 일기 수에 비례 0~100% (60편 = 100%) */
 function getSyncRate(): number {
   const count = getJournalCount();
-  return Math.min(100, Math.round((count / 50) * 100));
+  return Math.min(100, Math.round((count / 60) * 100));
 }
 
 function getPrimaryConstellationName(): string {
@@ -147,8 +147,8 @@ export function MyRoom({ keywords: _keywordsProp }: MyRoomProps) {
   const particles = getParticlePositions(28);
   const orbitContainerRef = useRef<HTMLDivElement>(null);
   const [orbitBoxHeight, setOrbitBoxHeight] = useState(200);
-  const ORBIT_HEIGHT_RATIO = 0.38;
-  const maxRadiusByHeight = Math.max(24, Math.min(72, orbitBoxHeight * ORBIT_HEIGHT_RATIO));
+  const ORBIT_HEIGHT_RATIO = 0.30;
+  const maxRadiusByHeight = Math.max(20, Math.min(56, orbitBoxHeight * ORBIT_HEIGHT_RATIO));
   const ORBIT_RADIUS_MIN = Math.round(maxRadiusByHeight * 0.55);
   const ORBIT_RADIUS_MAX = Math.round(maxRadiusByHeight);
   const charCounts = orbitingStars.map((s) => s.charCount);
@@ -177,12 +177,13 @@ export function MyRoom({ keywords: _keywordsProp }: MyRoomProps) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.6 }}
-      className="relative overflow-hidden w-full min-h-[42vh] flex flex-col rounded-2xl p-8"
+      className="relative overflow-hidden w-full min-h-0 flex flex-col rounded-2xl p-4 flex-1"
       style={{
         background: NEBULA_BG,
         boxShadow:
-          "0 8px 32px rgba(10, 14, 26, 0.4), 0 2px 8px rgba(10, 14, 26, 0.2), inset 0 0 80px 20px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255,255,255,0.04)",
-        border: "1px solid rgba(255, 255, 255, 0.08)",
+          "0 4px 24px rgba(10, 14, 26, 0.25), 0 1px 4px rgba(10, 14, 26, 0.15), inset 0 0 80px 20px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255,255,255,0.04)",
+        border: "1px solid rgba(255, 255, 255, 0.06)",
+        borderBottom: "none",
       }}
     >
       {/* Nebula radial: 중심 밝고 가장자리로 갈수록 깊은 우주 */}
@@ -220,7 +221,8 @@ export function MyRoom({ keywords: _keywordsProp }: MyRoomProps) {
       {/* Orbit system: 높이 기준 반지름 제한, 정확히 중앙 정렬 */}
       <div
         ref={orbitContainerRef}
-        className="relative flex flex-1 items-center justify-center w-full min-h-[200px]"
+        className="relative flex flex-1 min-h-0 items-center justify-center w-full"
+        style={{ minHeight: 120 }}
       >
         {/* 궤도 + 태양이 들어가는 정사각 영역 (반지름의 2배, 진짜 중앙에 배치) */}
         <div
@@ -324,11 +326,18 @@ export function MyRoom({ keywords: _keywordsProp }: MyRoomProps) {
         </div>
       </div>
 
+      {/* 하단 그라데이션: 밤하늘 → 일기쓰기 구역으로 부드럽게 이어짐 */}
+      <div
+        className="absolute bottom-0 left-0 right-0 h-12 pointer-events-none rounded-b-2xl"
+        style={{
+          background: "linear-gradient(to bottom, transparent 0%, rgba(244, 247, 251, 0.4) 50%, rgba(244, 247, 251, 0.92) 100%)",
+        }}
+      />
       {/* Info overlay */}
       <div
-        className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-4 py-3 pointer-events-none"
+        className="absolute bottom-0 left-0 right-0 flex items-center px-4 py-3 pointer-events-none"
         style={{
-          background: "linear-gradient(to top, rgba(10, 14, 26, 0.9) 0%, transparent 100%)",
+          background: "linear-gradient(to top, rgba(10, 14, 26, 0.88) 0%, transparent 100%)",
         }}
       >
         <span
@@ -342,12 +351,6 @@ export function MyRoom({ keywords: _keywordsProp }: MyRoomProps) {
           >
             {syncRate}%
           </span>
-        </span>
-        <span
-          className="text-[10px] text-amber-200/95 font-medium truncate max-w-[140px] text-right"
-          style={{ fontFamily: "var(--font-a2z-r), sans-serif" }}
-        >
-          {constellationName || "—"}
         </span>
       </div>
     </motion.div>

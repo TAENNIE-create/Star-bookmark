@@ -249,7 +249,7 @@ export function StoreModal({ open, onClose }: StoreModalProps) {
                             <ul className="space-y-2 mb-5">
                               {item.benefits.map((b, i) => (
                                 <li key={i} className="font-a2z-r flex items-start gap-2 text-sm" style={{ color: "rgba(253,230,138,0.95)" }}>
-                                  <span className="shrink-0 mt-0.5" style={{ color: CHAMPAGNE_GOLD }}>{LU_ICON}</span>
+                                  {b === "더욱 쾌적한 별의 여정을 맞이해보세요!" ? null : <span className="shrink-0 mt-0.5" style={{ color: CHAMPAGNE_GOLD }}>{LU_ICON}</span>}
                                   {b}
                                 </li>
                               ))}

@@ -7,8 +7,8 @@ import { createClient } from "../../lib/supabase/client";
 
 const LOGIN_CALLBACK_SCHEME = "com.starbookmark.app://login-callback";
 
-/** URL에서 #(해시) 또는 ?(쿼리) 뒤의 access_token, refresh_token 추출. 둘 다 있어도 모두 파싱해 병합 */
-function parseTokensFromUrl(url: string): { access_token?: string; refresh_token?: string; reason?: string } {
+/** URL에서 #(해시) 또는 ?(쿼리) 뒤의 파라미터 추출 */
+function parseParamsFromUrl(url: string): Record<string, string> {
   const params: Record<string, string> = {};
   const decode = (s: string) => decodeURIComponent(s.replace(/\+/g, " "));
 
@@ -32,6 +32,11 @@ function parseTokensFromUrl(url: string): { access_token?: string; refresh_token
       : url.slice(queryIdx + 1);
     parseSegment(queryPart);
   }
+  return params;
+}
+
+function parseTokensFromUrl(url: string): { access_token?: string; refresh_token?: string; reason?: string } {
+  const params = parseParamsFromUrl(url);
   const access_token = params["access_token"];
   const refresh_token = params["refresh_token"];
   let reason: string | undefined;
@@ -45,26 +50,43 @@ function isLoginCallbackUrl(url: string): boolean {
   return Boolean(url && (url.startsWith(LOGIN_CALLBACK_SCHEME) || url.startsWith("com.starbookmark.app://")));
 }
 
-/** 딥링크 URL 처리: 토큰 파싱 → setSession → 강제 /settings 이동 및 전체 새로고침 */
+/** 딥링크 URL 처리: code 교환 또는 토큰 setSession → /settings 이동 */
 async function handleLoginCallbackUrl(url: string, router: ReturnType<typeof useRouter>): Promise<boolean> {
   if (!isLoginCallbackUrl(url)) return false;
 
-  const parsed = parseTokensFromUrl(url);
-  const { access_token, refresh_token, reason } = parsed;
-  if (!access_token || !refresh_token) {
-    if (typeof window !== "undefined") {
-      window.alert("[딥링크] 토큰 파싱 실패: " + (reason || "알 수 없음"));
-    }
-    return false;
-  }
+  const params = parseParamsFromUrl(url);
+  const code = params["code"]?.trim();
+  const { access_token, refresh_token, reason } = parseTokensFromUrl(url);
+
+  const supabase = createClient();
 
   try {
-    const supabase = createClient();
-    await supabase.auth.setSession({ access_token, refresh_token });
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      console.warn("[AuthDeepLink] setSession 후 getSession이 비어 있음");
+    if (code) {
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+      if (error) {
+        console.error("[AuthDeepLink] exchangeCodeForSession failed:", error);
+        if (typeof window !== "undefined") {
+          window.alert("[딥링크] 로그인 코드 처리 실패: " + error.message);
+        }
+        return false;
+      }
+      if (!data?.session) {
+        if (typeof window !== "undefined") {
+          window.alert("[딥링크] 세션을 받지 못했습니다.");
+        }
+        return false;
+      }
+    } else if (access_token && refresh_token) {
+      await supabase.auth.setSession({ access_token, refresh_token });
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) console.warn("[AuthDeepLink] setSession 후 getSession이 비어 있음");
+    } else {
+      if (typeof window !== "undefined") {
+        window.alert("[딥링크] 토큰 파싱 실패: " + (reason || "URL에 code 또는 access_token/refresh_token이 없습니다."));
+      }
+      return false;
     }
+
     try {
       const { Browser } = await import("@capacitor/browser");
       await Browser.close();
@@ -78,9 +100,9 @@ async function handleLoginCallbackUrl(url: string, router: ReturnType<typeof use
     }
     return true;
   } catch (e) {
-    console.error("[AuthDeepLink] setSession failed:", e);
+    console.error("[AuthDeepLink] failed:", e);
     if (typeof window !== "undefined") {
-      window.alert("[딥링크] setSession 실패: " + (e instanceof Error ? e.message : String(e)));
+      window.alert("[딥링크] 처리 실패: " + (e instanceof Error ? e.message : String(e)));
     }
     return false;
   }
@@ -100,9 +122,6 @@ export function AuthDeepLinkHandler() {
       const App = (await import("@capacitor/app")).App;
       const processUrl = async (url: string) => {
         if (!url) return;
-        if (typeof window !== "undefined") {
-          window.alert("[딥링크] 수신 URL:\n" + url);
-        }
         await handleLoginCallbackUrl(url, router);
       };
 

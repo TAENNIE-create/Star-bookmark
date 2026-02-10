@@ -104,17 +104,17 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* 1구역: 밤하늘(Atlas) – 비율 4 (고정 높이 대신 flex) */}
+        {/* 1구역: 밤하늘(Atlas) – 공전이 잘리지 않도록 flex만 사용, 최대 36vh */}
         <motion.section
           initial={false}
           animate={{ opacity: 1 }}
-          className="flex-[4] min-h-[min(28vh,200px)] max-h-[42vh] flex flex-col px-4 pb-4 overflow-hidden"
+          className="flex-[4] min-h-0 max-h-[36vh] flex flex-col px-4 pb-2 overflow-hidden"
         >
           {activeTab === "home" && <MyRoom keywords={latestAnalysis?.keywords ?? null} />}
         </motion.section>
 
-        {/* 2구역: 일기 쓰기 버튼 – 비율 2 */}
-        <main className="flex-[2] min-h-[min(12vh,80px)] max-h-[20vh] flex items-center justify-center px-4 py-4">
+        {/* 2구역: 일기 쓰기 버튼 – 항상 보이도록 flex-shrink-0, 최소 높이 보장 */}
+        <main className="flex-shrink-0 min-h-[72px] flex items-center justify-center px-4 py-3">
           {activeTab === "home" && (
             <BreathingButton
               onAnalysisComplete={(data) =>
