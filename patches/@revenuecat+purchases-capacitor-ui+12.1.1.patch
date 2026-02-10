@@ -1,0 +1,12 @@
+diff --git a/node_modules/@revenuecat/purchases-capacitor-ui/android/build.gradle b/node_modules/@revenuecat/purchases-capacitor-ui/android/build.gradle
+index 0000000..1111111 100644
+--- a/node_modules/@revenuecat/purchases-capacitor-ui/android/build.gradle
++++ b/node_modules/@revenuecat/purchases-capacitor-ui/android/build.gradle
+@@ -28,7 +28,7 @@ android {
+     buildTypes {
+         release {
+             minifyEnabled false
+-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
++            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+         }
+     }

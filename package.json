@@ -12,7 +12,8 @@
     "cap:sync": "npx cap sync",
     "cap:android": "npm run build && npm run cap:icon && npx cap sync",
     "apk:prepare": "npm run build && npm run cap:icon && npx cap sync",
-    "android": "npx cap open android"
+    "android": "npx cap open android",
+    "postinstall": "patch-package && node scripts/fix-proguard.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.2",
@@ -39,6 +40,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.5",
+    "patch-package": "^8.0.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
