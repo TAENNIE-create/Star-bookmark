@@ -1,24 +1,28 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { createClient } from "../../../lib/supabase/client";
+import { useRouter } from "next/navigation";
+
+const LOADING_MESSAGE = "별지기가 당신의 우주를 연결하는 중입니다...";
 
 /**
- * 웹 OAuth 콜백: 정적 빌드 환경에서 쿼리의 code를 exchangeCodeForSession으로 세션 생성 후 next로 이동.
- * (output: "export"에서는 route.ts가 요청 시 실행되지 않으므로 이 클라이언트 페이지에서 처리)
+ * 웹 OAuth 콜백 페이지.
+ * output: "export" 환경이므로 서버 없이 클라이언트에서만 동작합니다.
+ * - URL 파싱·Supabase·리다이렉트는 모두 useEffect 내부에서만 실행해 프리렌더 시 오류를 방지합니다.
  */
 export default function AuthCallbackPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
-  const [message, setMessage] = useState("로그인 처리 중…");
+  const [message, setMessage] = useState(LOADING_MESSAGE);
 
   useEffect(() => {
-    const code = searchParams.get("code");
-    const next = searchParams.get("next") || "/";
-    const errorDesc = searchParams.get("error_description");
-    const error = searchParams.get("error");
+    if (typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const next = params.get("next") || "/";
+    const errorDesc = params.get("error_description");
+    const error = params.get("error");
 
     if (error || errorDesc) {
       setStatus("error");
@@ -34,7 +38,9 @@ export default function AuthCallbackPage() {
     }
 
     const run = async () => {
+      setMessage(LOADING_MESSAGE);
       try {
+        const { createClient } = await import("../../../lib/supabase/client");
         const supabase = createClient();
         const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
         if (exchangeError) {
@@ -52,7 +58,7 @@ export default function AuthCallbackPage() {
     };
 
     run();
-  }, [searchParams, router]);
+  }, [router]);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#f0f4f8]">
