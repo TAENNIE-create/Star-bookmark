@@ -88,41 +88,21 @@ function NebulaGlow() {
   );
 }
 
-/** 화면 중앙에서 샴페인 골드 빛이 화면 전체를 덮을 때까지 확장 (Supernova) */
+/** 화면 중앙에서 샴페인 골드 빛이 원형 마스크로 드러나며 화면 전체를 덮음 (Supernova) */
 function SupernovaEffect({ onNavigate }: { onNavigate: () => void }) {
-  useEffect(() => {
-    const t = window.setTimeout(onNavigate, 600);
-    return () => clearTimeout(t);
-  }, [onNavigate]);
-
   return (
     <motion.div
-      className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.05 }}
-      style={{ willChange: "opacity" }}
-    >
-      <motion.div
-        className="absolute rounded-full"
-        style={{
-          width: 120,
-          height: 120,
-          background: "radial-gradient(circle, rgba(255,255,255,0.98) 0%, rgba(253,230,138,0.95) 40%, rgba(253,230,138,0.85) 100%)",
-          boxShadow: "0 0 80px 50px rgba(253,230,138,0.9)",
-          willChange: "transform, opacity",
-        }}
-        initial={{ scale: 0, opacity: 0.9 }}
-        animate={{
-          scale: 12,
-          opacity: 1,
-        }}
-        transition={{
-          duration: 0.8,
-          ease: "easeIn",
-        }}
-      />
-    </motion.div>
+      className="fixed inset-0 z-50 pointer-events-none"
+      initial={{ opacity: 1, clipPath: "circle(0px at 50% 50%)" }}
+      animate={{ opacity: 1, clipPath: "circle(140vmax at 50% 50%)" }}
+      transition={{ duration: 0.9, ease: [0.4, 0.0, 0.2, 1] }}
+      onAnimationComplete={onNavigate}
+      style={{
+        background:
+          "radial-gradient(circle at center, rgba(255,255,255,0.95) 0%, rgba(253,230,138,0.95) 35%, rgba(253,230,138,0) 70%)",
+        willChange: "clip-path, opacity",
+      }}
+    />
   );
 }
 
