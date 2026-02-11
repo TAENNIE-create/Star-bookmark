@@ -71,8 +71,9 @@ export async function syncPurchaseAfterPayment(
     return { ok: false, error: "프로필 업데이트 실패: " + updateError.message };
   }
 
-  await setItem(supabase, userId, "user_lu_balance", String(newBalance));
-  await setItem(supabase, userId, "arisum-membership-tier", newMembership);
-
+  const { error: err1 } = await setItem(supabase, userId, "user_lu_balance", String(newBalance));
+  if (err1) return { ok: false, error: "저장 실패: " + err1.message };
+  const { error: err2 } = await setItem(supabase, userId, "arisum-membership-tier", newMembership);
+  if (err2) return { ok: false, error: "저장 실패: " + err2.message };
   return { ok: true, lu_balance: newBalance, membership_status: newMembership };
 }

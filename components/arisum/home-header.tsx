@@ -13,8 +13,15 @@ import {
 import { LU_BALANCE_UPDATED_EVENT, getLuBalance } from "../../lib/lu-balance";
 import { createClient } from "../../lib/supabase/client";
 import { openStoreModal } from "./store-modal-provider";
+import { getStoredLoginFlag } from "../../lib/app-storage";
 
 const CORAL_GLOW = "rgba(255, 107, 107, 0.5)";
+
+/** 로그인 깜빡임 방지: localStorage 플래그를 최우선으로 읽어 세션 확인 전에 UI 확정 */
+function getInitialIsGuest(): boolean {
+  if (typeof window === "undefined") return true;
+  return !getStoredLoginFlag();
+}
 
 export function HomeHeader() {
   const router = useRouter();
@@ -22,7 +29,7 @@ export function HomeHeader() {
   const [greeting, setGreeting] = useState("");
   const [status, setStatus] = useState<RecentRecordStatus>("none");
   const [lu, setLu] = useState(0);
-  const [isGuest, setIsGuest] = useState(true);
+  const [isGuest, setIsGuest] = useState(getInitialIsGuest);
   const [tooltipDismissed, setTooltipDismissed] = useState(false);
 
   useEffect(() => {

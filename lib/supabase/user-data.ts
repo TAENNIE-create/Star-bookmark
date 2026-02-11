@@ -26,21 +26,23 @@ export async function setItem(
   userId: string,
   key: string,
   value: string | object
-): Promise<void> {
+): Promise<{ error: Error | null }> {
   const valueJson =
     typeof value === "string" ? ({ __raw: value } as object) : value;
-  await supabase.from(TABLE).upsert(
+  const { error } = await supabase.from(TABLE).upsert(
     { user_id: userId, key, value: valueJson, updated_at: new Date().toISOString() },
     { onConflict: "user_id,key" }
   );
+  return { error: error ? new Error(error.message) : null };
 }
 
 export async function removeItem(
   supabase: SupabaseClient,
   userId: string,
   key: string
-): Promise<void> {
-  await supabase.from(TABLE).delete().eq("user_id", userId).eq("key", key);
+): Promise<{ error: Error | null }> {
+  const { error } = await supabase.from(TABLE).delete().eq("user_id", userId).eq("key", key);
+  return { error: error ? new Error(error.message) : null };
 }
 
 /** 해당 사용자의 user_data 전체 로드 (key -> 원본 문자열) */
@@ -124,7 +126,11 @@ export async function migrateLocalStorageToSupabase(
     } catch {
       value = { __raw: raw };
     }
-    await setItem(supabase, userId, key, value as object);
+    const { error } = await setItem(supabase, userId, key, value as object);
+    if (error) {
+      console.error("[Supabase] migrateLocalStorageToSupabase setItem failed:", key, error.message);
+      continue;
+    }
     window.localStorage.removeItem(key);
   }
 }

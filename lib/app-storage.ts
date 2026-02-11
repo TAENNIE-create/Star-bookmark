@@ -37,3 +37,20 @@ export function getAppStorage(): StorageAdapter {
 export function setAppStorage(adapter: StorageAdapter | null): void {
   currentAdapter = adapter;
 }
+
+/** 로그인 깜빡임 방지: localStorage 플래그 (Supabase 세션 확인 전에 UI 확정용) */
+const LOGIN_FLAG_KEY = "arisum-has-logged-in";
+
+export function getStoredLoginFlag(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(LOGIN_FLAG_KEY) === "1";
+}
+
+export function setStoredLoginFlag(loggedIn: boolean): void {
+  if (typeof window === "undefined") return;
+  if (loggedIn) {
+    window.localStorage.setItem(LOGIN_FLAG_KEY, "1");
+  } else {
+    window.localStorage.removeItem(LOGIN_FLAG_KEY);
+  }
+}

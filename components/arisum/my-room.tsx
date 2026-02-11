@@ -177,18 +177,27 @@ export function MyRoom({ keywords: _keywordsProp }: MyRoomProps) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.6 }}
-      className="relative overflow-hidden w-full min-h-0 flex flex-col rounded-2xl p-4 flex-1"
+      className="relative overflow-hidden w-full min-h-0 flex flex-col rounded-t-2xl p-4 flex-1"
       style={{
         background: NEBULA_BG,
-        boxShadow:
-          "0 4px 24px rgba(10, 14, 26, 0.25), 0 1px 4px rgba(10, 14, 26, 0.15), inset 0 0 80px 20px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255,255,255,0.04)",
-        border: "1px solid rgba(255, 255, 255, 0.06)",
-        borderBottom: "none",
+        boxShadow: "0 2px 12px rgba(10, 14, 26, 0.12)",
+        isolation: "isolate",
+        zIndex: 1,
+        WebkitMaskImage: "linear-gradient(to bottom, black 0%, black 70%, transparent 100%)",
+        maskImage: "linear-gradient(to bottom, black 0%, black 70%, transparent 100%)",
       }}
     >
+      {/* 배경에서 올라오는 빛(그라데이션)은 박스 뒤에 위치 */}
+      <div
+        className="absolute inset-0 pointer-events-none rounded-t-2xl"
+        style={{
+          zIndex: 0,
+          background: "linear-gradient(to bottom, transparent 0%, transparent 55%, rgba(244,247,251,0.3) 80%, rgba(244,247,251,0.95) 100%)",
+        }}
+      />
       {/* Nebula radial: 중심 밝고 가장자리로 갈수록 깊은 우주 */}
       <div
-        className="absolute inset-0 pointer-events-none rounded-2xl"
+        className="absolute inset-0 pointer-events-none rounded-t-2xl z-[1]"
         style={{
           background:
             "radial-gradient(ellipse 85% 75% at 50% 50%, rgba(100, 116, 139, 0.18) 0%, rgba(71, 85, 105, 0.08) 35%, rgba(30, 41, 59, 0.03) 60%, transparent 75%), linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.25) 100%)",
@@ -196,7 +205,7 @@ export function MyRoom({ keywords: _keywordsProp }: MyRoomProps) {
       />
 
       {/* Star particles */}
-      <div className="absolute inset-0 pointer-events-none rounded-2xl overflow-hidden">
+      <div className="absolute inset-0 pointer-events-none rounded-t-2xl overflow-hidden z-[1]">
         {particles.map((p, i) => (
           <motion.span
             key={i}
@@ -221,7 +230,7 @@ export function MyRoom({ keywords: _keywordsProp }: MyRoomProps) {
       {/* Orbit system: 높이 기준 반지름 제한, 정확히 중앙 정렬 */}
       <div
         ref={orbitContainerRef}
-        className="relative flex flex-1 min-h-0 items-center justify-center w-full"
+        className="relative flex flex-1 min-h-0 items-center justify-center w-full z-[1]"
         style={{ minHeight: 120 }}
       >
         {/* 궤도 + 태양이 들어가는 정사각 영역 (반지름의 2배, 진짜 중앙에 배치) */}
@@ -326,16 +335,9 @@ export function MyRoom({ keywords: _keywordsProp }: MyRoomProps) {
         </div>
       </div>
 
-      {/* 하단 그라데이션: 밤하늘 → 일기쓰기 구역으로 부드럽게 이어짐 */}
-      <div
-        className="absolute bottom-0 left-0 right-0 h-12 pointer-events-none rounded-b-2xl"
-        style={{
-          background: "linear-gradient(to bottom, transparent 0%, rgba(244, 247, 251, 0.4) 50%, rgba(244, 247, 251, 0.92) 100%)",
-        }}
-      />
       {/* Info overlay */}
       <div
-        className="absolute bottom-0 left-0 right-0 flex items-center px-4 py-3 pointer-events-none"
+        className="absolute bottom-0 left-0 right-0 flex items-center px-4 py-3 pointer-events-none z-[2]"
         style={{
           background: "linear-gradient(to top, rgba(10, 14, 26, 0.88) 0%, transparent 100%)",
         }}

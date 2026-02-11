@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Capacitor } from "@capacitor/core";
 import { createClient } from "../../lib/supabase/client";
+import { setStoredLoginFlag } from "../../lib/app-storage";
 
 const LOGIN_CALLBACK_SCHEME = "com.starbookmark.app://login-callback";
 
@@ -86,6 +87,8 @@ async function handleLoginCallbackUrl(url: string, router: ReturnType<typeof use
       }
       return false;
     }
+
+    setStoredLoginFlag(true);
 
     try {
       const { Browser } = await import("@capacitor/browser");

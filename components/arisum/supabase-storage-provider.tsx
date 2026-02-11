@@ -9,7 +9,7 @@ import {
   setItem as setUserDataItem,
   removeItem as removeUserDataItem,
 } from "../../lib/supabase/user-data";
-import { setAppStorage } from "../../lib/app-storage";
+import { setAppStorage, setStoredLoginFlag } from "../../lib/app-storage";
 import { LU_BALANCE_UPDATED_EVENT } from "../../lib/lu-balance";
 
 export function SupabaseStorageProvider({ children }: { children: React.ReactNode }) {
@@ -36,7 +36,11 @@ export function SupabaseStorageProvider({ children }: { children: React.ReactNod
             },
             setItem(key: string, value: string) {
               cacheRef.current[key] = value;
-              setUserDataItem(supabase, userId, key, value).catch(() => {});
+              setUserDataItem(supabase, userId, key, value).then(({ error }) => {
+                if (error) {
+                  console.error("[Supabase] setItem failed:", key, error.message);
+                }
+              });
               if (key === "user_lu_balance") {
                 window.dispatchEvent(new Event(LU_BALANCE_UPDATED_EVENT));
               }
@@ -56,7 +60,44 @@ export function SupabaseStorageProvider({ children }: { children: React.ReactNod
             },
             removeItem(key: string) {
               delete cacheRef.current[key];
-              removeUserDataItem(supabase, userId, key).catch(() => {});
+              removeUserDataItem(supabase, userId, key).then(({ error }) => {
+                if (error) console.error("[Supabase] removeItem failed:", key, error.message);
+              });
+            },
+          });
+        })
+        .catch((err) => {
+          console.error("[Supabase] initStorage failed (getAll or migration):", err?.message ?? err);
+          cacheRef.current = {};
+          setAppStorage({
+            getItem(key: string) {
+              return cacheRef.current[key] ?? null;
+            },
+            setItem(key: string, value: string) {
+              cacheRef.current[key] = value;
+              setUserDataItem(supabase, userId, key, value).then(({ error }) => {
+                if (error) console.error("[Supabase] setItem failed:", key, error.message);
+              });
+              if (key === "user_lu_balance") window.dispatchEvent(new Event(LU_BALANCE_UPDATED_EVENT));
+              if (
+                key === "arisum-report-by-date" ||
+                key === "user_identity_summary" ||
+                key === "arisum-journals"
+              ) {
+                window.dispatchEvent(new Event("report-updated"));
+              }
+              if (key === "global_atlas_data" || key === "current_active_constellations") {
+                window.dispatchEvent(new Event("constellation-updated"));
+              }
+              if (key === "arisum-archive-unlocked") {
+                window.dispatchEvent(new Event("lu-balance-updated"));
+              }
+            },
+            removeItem(key: string) {
+              delete cacheRef.current[key];
+              removeUserDataItem(supabase, userId, key).then(({ error }) => {
+                if (error) console.error("[Supabase] removeItem failed:", key, error.message);
+              });
             },
           });
         })
@@ -70,18 +111,22 @@ export function SupabaseStorageProvider({ children }: { children: React.ReactNod
     supabase.auth.getUser().then(({ data }) => {
       const user = data?.user;
       if (!user) {
+        setStoredLoginFlag(false);
         setAppStorage(null);
         return;
       }
+      setStoredLoginFlag(true);
       initStorage(user.id);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session?.user) {
+        setStoredLoginFlag(false);
         setAppStorage(null);
         cacheRef.current = {};
         return;
       }
+      setStoredLoginFlag(true);
       initStorage(session.user.id);
     });
 
