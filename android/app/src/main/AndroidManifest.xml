@@ -13,7 +13,8 @@
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
-            android:exported="true">
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -40,4 +41,6 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Android 13+ 알림 표시 (로컬 리마인더용) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Google Play 인앱 결제(RevenueCat/구독·별조각) -->
+    <uses-permission android:name="com.android.vending.BILLING" />
 </manifest>

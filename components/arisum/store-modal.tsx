@@ -146,7 +146,7 @@ export function StoreModal({ open, onClose }: StoreModalProps) {
           exit={{ y: "100%", opacity: 0.98 }}
           transition={{ type: "spring", damping: 28, stiffness: 300 }}
           onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-md max-h-[90vh] rounded-t-3xl sm:rounded-3xl flex flex-col overflow-hidden"
+          className="w-full max-w-md max-h-[90dvh] rounded-t-3xl sm:rounded-3xl flex flex-col overflow-hidden"
           style={{
             backgroundColor: MIDNIGHT_BAND,
             border: "1px solid rgba(253,230,138,0.25)",

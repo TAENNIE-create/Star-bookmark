@@ -70,6 +70,13 @@ export function QuestCard() {
   const [done, setDone] = useState<Record<string, boolean>>({});
   const [luAnimKey, setLuAnimKey] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<QuestTab>("today");
+  const [, setMembershipVersion] = useState(0);
+
+  useEffect(() => {
+    const onMembershipUpdated = () => setMembershipVersion((v) => v + 1);
+    window.addEventListener("membership-updated", onMembershipUpdated);
+    return () => window.removeEventListener("membership-updated", onMembershipUpdated);
+  }, []);
 
   const refresh = () => {
     setTodayQuests(getQuestsForDate(getTodayKey()));

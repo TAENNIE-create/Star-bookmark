@@ -378,7 +378,7 @@ export default function MonthlyReportPage() {
 
   return (
     <div className="min-h-screen arisum-vintage-page relative" style={{ backgroundColor: MIDNIGHT_BLUE, color: SILVER_WHITE }}>
-      <div className="relative z-10 w-full max-w-md mx-auto px-6 py-8 pb-24">
+      <div className="relative z-10 w-full max-w-md mx-auto px-6 py-8 arisum-pb-tab-safe">
         {/* 커버 */}
         <Section className="mb-16">
           <p className="text-xs uppercase tracking-[0.2em] mb-2" style={{ color: SILVER_WHITE, opacity: 0.8 }}>

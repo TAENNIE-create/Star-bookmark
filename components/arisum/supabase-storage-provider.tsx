@@ -5,12 +5,14 @@ import { createClient } from "../../lib/supabase/client";
 import {
   getAll,
   getLocalStorageKeysToMigrate,
+  getProfileBalanceAndMembership,
   migrateLocalStorageToSupabase,
   setItem as setUserDataItem,
   removeItem as removeUserDataItem,
 } from "../../lib/supabase/user-data";
 import { setAppStorage, setStoredLoginFlag } from "../../lib/app-storage";
 import { LU_BALANCE_UPDATED_EVENT } from "../../lib/lu-balance";
+import { setMembershipTier } from "../../lib/economy";
 
 export function SupabaseStorageProvider({ children }: { children: React.ReactNode }) {
   const cacheRef = useRef<Record<string, string>>({});
@@ -28,8 +30,23 @@ export function SupabaseStorageProvider({ children }: { children: React.ReactNod
       }
       migrateLocalStorageToSupabase(supabase, userId)
         .then(() => getAll(supabase, userId))
-        .then((all) => {
+        .then(async (all) => {
           cacheRef.current = { ...all };
+          // 로그인 시 profiles(별조각·멤버십)를 기준으로 한 번 동기화 — 다른 기기 결제 반영 등 반영
+          const profile = await getProfileBalanceAndMembership(supabase, userId);
+          if (profile) {
+            const balanceStr = String(profile.lu_balance);
+            const tier = profile.membership_status as "FREE" | "SHORT_STORY" | "HARDCOVER" | "CHRONICLE";
+            if (cacheRef.current["user_lu_balance"] !== balanceStr) {
+              cacheRef.current["user_lu_balance"] = balanceStr;
+              await setUserDataItem(supabase, userId, "user_lu_balance", balanceStr);
+            }
+            if (cacheRef.current["arisum-membership-tier"] !== tier) {
+              cacheRef.current["arisum-membership-tier"] = tier;
+              await setUserDataItem(supabase, userId, "arisum-membership-tier", tier);
+              setMembershipTier(tier);
+            }
+          }
           setAppStorage({
             getItem(key: string) {
               return cacheRef.current[key] ?? null;
@@ -65,6 +82,9 @@ export function SupabaseStorageProvider({ children }: { children: React.ReactNod
               });
             },
           });
+          if (profile && typeof window !== "undefined") {
+            window.dispatchEvent(new Event(LU_BALANCE_UPDATED_EVENT));
+          }
         })
         .catch((err) => {
           console.error("[Supabase] initStorage failed (getAll or migration):", err?.message ?? err);

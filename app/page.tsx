@@ -92,7 +92,8 @@ export default function HomePage() {
       style={{ willChange: "opacity" }}
     >
       <div
-        className="w-full max-w-md min-h-[100dvh] relative flex flex-col bg-transparent pb-24"
+        className="w-full max-w-md min-h-[100dvh] relative flex flex-col bg-transparent"
+        className="arisum-pb-tab-safe"
         style={{ color: MIDNIGHT_BLUE }}
       >
         <div className="h-6 flex-shrink-0" aria-hidden />
@@ -104,28 +105,49 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* 1구역: 밤하늘(Atlas) – 공전이 잘리지 않도록 flex만 사용, 최대 36vh */}
-        <motion.section
-          initial={false}
-          animate={{ opacity: 1 }}
-          className="flex-[4] min-h-0 max-h-[36vh] flex flex-col px-4 pb-2 overflow-hidden"
-        >
-          {activeTab === "home" && <MyRoom keywords={latestAnalysis?.keywords ?? null} />}
-        </motion.section>
-
-        {/* 2구역: 일기 쓰기 버튼 – 항상 보이도록 flex-shrink-0, 최소 높이 보장 */}
-        <main className="flex-shrink-0 min-h-[72px] flex items-center justify-center px-4 py-3">
-          {activeTab === "home" && (
-            <BreathingButton
-              onAnalysisComplete={(data) =>
-                setLatestAnalysis({
-                  keywords: data.keywords,
-                  counselorLetter: data.counselorLetter,
-                })
-              }
+        {/* 1·2구역: 공전 박스 + 일기쓰기. 일기쓰기 빛은 공전 박스 뒤로만 퍼지도록 glow 레이어를 뒤에 둠 */}
+        {activeTab === "home" ? (
+          <div className="relative flex flex-col flex-[4] min-h-0 basis-0">
+            {/* 일기쓰기 빛: 버튼 위로 퍼지는 그라데이션, z-0으로 공전 박스 뒤에만 보이게 */}
+            <div
+              className="absolute left-0 right-0 pointer-events-none rounded-t-2xl"
+              style={{
+                bottom: 72,
+                height: 140,
+                zIndex: 0,
+                background:
+                  "linear-gradient(to top, rgba(253,230,138,0.4) 0%, rgba(253,230,138,0.18) 40%, rgba(253,230,138,0.06) 65%, transparent 100%)",
+              }}
+              aria-hidden
             />
-          )}
-        </main>
+            <motion.section
+              initial={false}
+              animate={{ opacity: 1 }}
+              className="relative z-10 flex-1 min-h-0 max-h-[36vh] flex flex-col px-4 pb-2 overflow-hidden"
+            >
+              <MyRoom keywords={latestAnalysis?.keywords ?? null} />
+            </motion.section>
+            <main className="relative z-10 flex-shrink-0 min-h-[72px] flex items-center justify-center px-4 py-3">
+              <BreathingButton
+                onAnalysisComplete={(data) =>
+                  setLatestAnalysis({
+                    keywords: data.keywords,
+                    counselorLetter: data.counselorLetter,
+                  })
+                }
+              />
+            </main>
+          </div>
+        ) : (
+          <>
+            <motion.section
+              initial={false}
+              animate={{ opacity: 1 }}
+              className="flex-[4] min-h-0 max-h-[36vh] flex flex-col px-4 pb-2 overflow-hidden"
+            />
+            <main className="flex-shrink-0 min-h-[72px] flex items-center justify-center px-4 py-3" />
+          </>
+        )}
 
         {/* 3구역: 퀘스트 – 비율 4, 남은 공간 채움 */}
         <section className="flex-[4] min-h-[24vh] px-4 pt-6 pb-6 flex flex-col overflow-auto">

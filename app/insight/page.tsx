@@ -690,7 +690,7 @@ export default function InsightPage() {
           </button>
         </header>
 
-        <main className="flex-1 px-6 pb-24 overflow-y-auto space-y-6">
+        <main className="flex-1 px-6 overflow-y-auto space-y-6 arisum-pb-tab-safe">
           <SectionGarden
             history={history}
             latestScores={latestScores}

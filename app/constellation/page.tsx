@@ -1005,7 +1005,7 @@ export default function ConstellationPage() {
         </div>
       </header>
 
-      <main className="flex-1 px-6 pb-24 overflow-y-auto space-y-6">
+      <main className="flex-1 px-6 overflow-y-auto space-y-6 arisum-pb-tab-safe">
         {/* ─── 상단 지도: 순수 시각 분위기 (텍스트 설명 없음, 별자리 이름만 아우라와 함께) ─── */}
         <section
           className="rounded-3xl overflow-hidden border border-white/10 shadow-2xl backdrop-blur-sm"
@@ -1695,7 +1695,7 @@ export default function ConstellationPage() {
             onClick={() => setTraitPopupCard(null)}
           >
             <motion.div
-              className="relative rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl"
+              className="relative rounded-2xl w-full max-w-lg max-h-[90dvh] overflow-y-auto shadow-2xl"
               style={{
                 backgroundColor: "#0A0E1A",
                 border: "1px solid rgba(253, 230, 138, 0.35)",

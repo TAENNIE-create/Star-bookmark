@@ -71,7 +71,7 @@ export default function BookshelfPage() {
           </div>
         </header>
 
-        <main className="flex-1 px-6 pb-24 overflow-y-auto">
+        <main className="flex-1 px-6 overflow-y-auto arisum-pb-tab-safe">
           <p className="text-xs text-[#64748B] mb-4">
             별조각을 모으면 과거 월간 기록집을 책으로 열람할 수 있어요.
           </p>

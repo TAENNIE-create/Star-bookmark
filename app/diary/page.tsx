@@ -7,8 +7,8 @@ import { TabBar, type TabKey } from "../../components/arisum/tab-bar";
 import type { MoodScores } from "../../lib/arisum-types";
 import { MIDNIGHT_BLUE, MUTED, CARD_BG, LU_ICON } from "../../lib/theme";
 import { getAnalyzeApiUrl } from "../../lib/api-client";
-import { getLuBalance, subtractLu, addLu, LU_DAILY_REPORT_UNLOCK, LU_REANALYZE } from "../../lib/lu-balance";
-import { getMembershipTier, MEMBERSHIP_ACCESS_DAYS, isDateAccessible, getRequiredShards, COST_PERMANENT_MEMORY_KEY } from "../../lib/economy";
+import { getLuBalance, subtractLu, addLu } from "../../lib/lu-balance";
+import { getMembershipTier, MEMBERSHIP_ACCESS_DAYS, isDateAccessible, getRequiredShards, INSUFFICIENT_SHARDS_MESSAGE } from "../../lib/economy";
 import { getUnlockedMonths, setUnlockedMonths } from "../../lib/archive-unlock";
 import { getUserName } from "../../lib/home-greeting";
 import { getQuestsForDate, setQuestsForDate } from "../../lib/quest-storage";
@@ -214,7 +214,14 @@ function DiaryCalendarContent() {
   } | null>(null);
   /** 분석 실패 시 사용자에게 보여줄 메시지 (무한 로딩 방지) */
   const [analysisErrorMessage, setAnalysisErrorMessage] = useState<string | null>(null);
+  const [, setMembershipVersion] = useState(0);
   const hasAutoSelectedToday = useRef(false);
+
+  useEffect(() => {
+    const onMembershipUpdated = () => setMembershipVersion((v) => v + 1);
+    window.addEventListener("membership-updated", onMembershipUpdated);
+    return () => window.removeEventListener("membership-updated", onMembershipUpdated);
+  }, []);
 
   const refreshSelectedQuests = () => {
     const items = getTomorrowQuests();
@@ -588,7 +595,10 @@ function DiaryCalendarContent() {
     if (!selectedDate || isReanalyzing) return;
     const reCost = getRequiredShards(tier, "re_analysis");
     const lu = getLuBalance();
-    if (lu < reCost) return;
+    if (lu < reCost) {
+      openStoreModal();
+      return;
+    }
     setShowReanalyzeModal(false);
     setIsReanalyzing(true);
     try {
@@ -811,6 +821,7 @@ function DiaryCalendarContent() {
   const accessDays = MEMBERSHIP_ACCESS_DAYS[tier];
   const costDaily = getRequiredShards(tier, "daily_analysis");
   const costRe = getRequiredShards(tier, "re_analysis");
+  const costMemory = getRequiredShards(tier, "permanent_memory_key");
   const unlockedMonths = getUnlockedMonths();
 
   /** 첫 클릭: 날짜 선택 + 하단 리포트 표시. 봉인된 날짜 클릭 시 해금 유도 팝업 */
@@ -942,7 +953,7 @@ function DiaryCalendarContent() {
           </div>
         </motion.header>
 
-        <main className="flex-1 px-6 pt-0 pb-24 overflow-hidden">
+        <main className="flex-1 px-6 pt-0 overflow-hidden arisum-pb-tab-safe">
           <motion.div
             className="rounded-3xl bg-white border border-[#E2E8F0] shadow-sm px-4 py-6 cursor-grab active:cursor-grabbing"
             drag="x"
@@ -1054,7 +1065,11 @@ function DiaryCalendarContent() {
                           <div className="flex flex-col items-center gap-3">
                             <button
                               type="button"
-                              onClick={() => selectedDate && (lu >= costDaily ? setShowUnlockConfirm(selectedDate) : null)}
+                              onClick={() => {
+                                if (!selectedDate) return;
+                                if (lu >= costDaily) setShowUnlockConfirm(selectedDate);
+                                else openStoreModal();
+                              }}
                               disabled={lu < costDaily || isLoadingReport}
                               className="rounded-2xl px-6 py-4 text-base font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                               style={
@@ -1080,7 +1095,7 @@ function DiaryCalendarContent() {
                           )}
                           {lu < costDaily && (
                             <p className="text-xs" style={{ color: "#94A3B8" }}>
-                              별조각이 부족하면 기록을 읽을 수 없어요.
+                              {INSUFFICIENT_SHARDS_MESSAGE}
                             </p>
                           )}
                         </div>
@@ -1319,7 +1334,7 @@ function DiaryCalendarContent() {
                   별조각 {costRe}개를 사용해 이 날의 기록을 밤하늘에 올리시겠어요?
                 </p>
                 {getLuBalance() < costRe && (
-                  <p className="text-xs text-amber-600 text-center mb-2">별조각이 부족해요</p>
+                  <p className="text-xs text-amber-600 text-center mb-2">{INSUFFICIENT_SHARDS_MESSAGE}</p>
                 )}
                 {getLuBalance() < costRe && (
                   <button
@@ -1327,7 +1342,7 @@ function DiaryCalendarContent() {
                     onClick={() => { openStoreModal(); setShowReanalyzeModal(false); }}
                     className="text-xs font-medium text-amber-700 underline mb-4"
                   >
-                    별조각 구매하기
+                    상점에서 채우기
                   </button>
                 )}
                 <div className="flex gap-3 mt-4">
@@ -1354,14 +1369,14 @@ function DiaryCalendarContent() {
           )}
         </AnimatePresence>
 
-        {/* 시간의 봉인: 기억 범위 밖 날짜 클릭 시 — 기억 깨우기(200별조각) 또는 멤버십 유도 */}
+        {/* 시간의 봉인: 기억 범위 밖 날짜 클릭 시 — 기억 깨우기(별조각) 또는 멤버십 유도 */}
         <AnimatePresence>
           {sealedDateKey && (() => {
             const yearMonth = sealedDateKey.slice(0, 7);
-            const canUnlock = getLuBalance() >= COST_PERMANENT_MEMORY_KEY;
+            const canUnlock = getLuBalance() >= costMemory;
             const handleUnlockMonth = () => {
               if (!canUnlock) return;
-              if (!subtractLu(COST_PERMANENT_MEMORY_KEY)) return;
+              if (!subtractLu(costMemory)) return;
               const months = getUnlockedMonths();
               if (!months.has(yearMonth)) setUnlockedMonths(new Set([...months, yearMonth]));
               window.dispatchEvent(new Event("lu-balance-updated"));
@@ -1393,7 +1408,7 @@ function DiaryCalendarContent() {
                       className="w-full rounded-xl py-2.5 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{ backgroundColor: canUnlock ? MIDNIGHT_BLUE : "#94A3B8" }}
                     >
-                      기억 깨우기 ({COST_PERMANENT_MEMORY_KEY}별조각 · 이 달 영구 해금)
+                      기억 깨우기 ({costMemory}별조각 · 이 달 영구 해금)
                     </button>
                     <div className="flex gap-3">
                       <button

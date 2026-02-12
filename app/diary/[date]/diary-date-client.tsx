@@ -6,7 +6,7 @@ import { motion, AnimatePresence, useMotionValue, useTransform, animate } from "
 import { TabBar, type TabKey } from "../../../components/arisum/tab-bar";
 import { MIDNIGHT_BLUE, MUTED, CARD_BG, PRIMARY_HOVER } from "../../../lib/theme";
 import { getLuBalance, subtractLu, addLu } from "../../../lib/lu-balance";
-import { getMembershipTier, getRequiredShards } from "../../../lib/economy";
+import { getMembershipTier, getRequiredShards, INSUFFICIENT_SHARDS_MESSAGE } from "../../../lib/economy";
 import { LU_ICON } from "../../../lib/theme";
 import { removeStarFromAtlas } from "../../../lib/atlas-storage";
 import { getApiUrl } from "../../../lib/api-client";
@@ -14,6 +14,7 @@ import { getAppStorage } from "../../../lib/app-storage";
 import { rollbackIdentityArchiveForDate } from "../../../lib/identity-archive";
 import { setQuestsForDate } from "../../../lib/quest-storage";
 import { LoadingOverlay } from "../../../components/arisum/loading-overlay";
+import { openStoreModal } from "../../../components/arisum/store-modal-provider";
 import { Mic } from "lucide-react";
 
 type JournalEntry = {
@@ -356,7 +357,15 @@ export default function DiaryWritePage() {
   const router = useRouter();
   const params = useParams();
   const dateParam = params.date as string;
-  const costDiaryMode = getRequiredShards(getMembershipTier(), "diary_mode");
+  const [membershipVersion, setMembershipVersion] = useState(0);
+  const tier = getMembershipTier();
+  const costDiaryMode = getRequiredShards(tier, "diary_mode");
+
+  useEffect(() => {
+    const onMembershipUpdated = () => setMembershipVersion((v) => v + 1);
+    window.addEventListener("membership-updated", onMembershipUpdated);
+    return () => window.removeEventListener("membership-updated", onMembershipUpdated);
+  }, []);
 
   const [mode, setMode] = useState<Mode>("select");
   const [interviewStep, setInterviewStep] = useState(0);
@@ -527,7 +536,8 @@ export default function DiaryWritePage() {
       }
       const lu = getLuBalance();
       if (costDiaryMode > 0 && lu < costDiaryMode) {
-        setError(`일기 초안 생성에는 별조각 ${costDiaryMode}개가 필요해요.`);
+        setError(INSUFFICIENT_SHARDS_MESSAGE);
+        openStoreModal();
         return;
       }
       setShowLuConfirmModal(false);
@@ -584,7 +594,8 @@ export default function DiaryWritePage() {
       const allAnswers = [...interviewAnswers, trimmed];
       const lu = getLuBalance();
       if (costDiaryMode > 0 && lu < costDiaryMode) {
-        setError(`일기 초안 생성에는 별조각 ${costDiaryMode}개가 필요해요.`);
+        setError(INSUFFICIENT_SHARDS_MESSAGE);
+        openStoreModal();
         return;
       }
       setShowLuConfirmModal(true);
@@ -720,7 +731,12 @@ export default function DiaryWritePage() {
 
   /** 사진 일기 생성 (API 성공 후에만 별조각 차감) */
   const handleGeneratePhotoDiary = useCallback(async () => {
-    if (!photoAnalysis || (costDiaryMode > 0 && getLuBalance() < costDiaryMode)) return;
+    if (!photoAnalysis) return;
+    if (costDiaryMode > 0 && getLuBalance() < costDiaryMode) {
+      setError(INSUFFICIENT_SHARDS_MESSAGE);
+      openStoreModal();
+      return;
+    }
     setShowPhotoLuModal(false);
     setIsGeneratingPhotoDiary(true);
     setError(null);
@@ -927,7 +943,11 @@ export default function DiaryWritePage() {
 
   /** 음성 일기 승화 API 성공 후에만 별조각 차감 → question-preview */
   const handleVoiceGenerate = useCallback(async () => {
-    if (costDiaryMode > 0 && getLuBalance() < costDiaryMode) return;
+    if (costDiaryMode > 0 && getLuBalance() < costDiaryMode) {
+      setError(INSUFFICIENT_SHARDS_MESSAGE);
+      openStoreModal();
+      return;
+    }
     setShowVoiceLuModal(false);
     setIsGeneratingQuestion(true);
     setError(null);
@@ -1151,7 +1171,7 @@ export default function DiaryWritePage() {
         </motion.header>
 
         {/* Main Content */}
-        <main className="flex-1 px-6 pb-24 overflow-y-auto">
+        <main className="flex-1 px-6 overflow-y-auto arisum-pb-tab-safe">
           <AnimatePresence mode="wait">
             <motion.div
               key={mainContentKey}
@@ -1610,14 +1630,15 @@ export default function DiaryWritePage() {
                       </p>
                       {costDiaryMode > 0 && getLuBalance() < costDiaryMode && (
                         <p className="text-xs mb-3" style={{ color: MUTED }}>
-                          일기 생성에는 {LU_ICON} {costDiaryMode}개가 필요해요.
+                          {costDiaryMode > 0 ? `일기 생성에는 ${LU_ICON} ${costDiaryMode}개가 필요해요.` : "구독 시 기록 모드 무료예요."}
                         </p>
                       )}
                       <button
                         type="button"
                         onClick={() => {
                           if (costDiaryMode > 0 && getLuBalance() < costDiaryMode) {
-                            setError(`별조각 ${costDiaryMode}개가 필요해요.`);
+                            setError(INSUFFICIENT_SHARDS_MESSAGE);
+                            openStoreModal();
                             return;
                           }
                           setShowPhotoLuModal(true);
@@ -1626,7 +1647,7 @@ export default function DiaryWritePage() {
                         className="w-full rounded-2xl py-3.5 text-sm font-semibold text-white disabled:opacity-50 transition-opacity"
                         style={{ backgroundColor: MODE_PHOTO_DEEP }}
                       >
-                        {isGeneratingPhotoDiary ? "초안 만드는 중..." : `일기 초안 만들기 ${LU_ICON} 10`}
+                        {isGeneratingPhotoDiary ? "초안 만드는 중..." : (costDiaryMode > 0 ? `일기 초안 만들기 ${LU_ICON} ${costDiaryMode}` : "일기 초안 만들기")}
                       </button>
                     </>
                   )}
@@ -1836,7 +1857,7 @@ export default function DiaryWritePage() {
                     일기 초안을 생성할까요?
                   </p>
                   <p className="text-sm text-[#64748B] mb-4">
-                    {LU_ICON} 별조각 10개가 소모돼요. 인터뷰 답변을 바탕으로 1인칭 일기 초안을 만들어 드려요.
+                    {costDiaryMode > 0 ? `${LU_ICON} 별조각 ${costDiaryMode}개가 소모돼요. ` : ""}인터뷰 답변을 바탕으로 1인칭 일기 초안을 만들어 드려요.
                   </p>
                   <div className="flex gap-2">
                     <button
@@ -1852,7 +1873,7 @@ export default function DiaryWritePage() {
                       disabled={isGeneratingQuestion || (costDiaryMode > 0 && getLuBalance() < costDiaryMode)}
                       className="flex-1 rounded-2xl bg-[#0F172A] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#1E293B] disabled:opacity-60"
                     >
-                      {LU_ICON} 별조각 10개 사용
+                      {costDiaryMode > 0 ? `${LU_ICON} 별조각 ${costDiaryMode}개 사용` : "일기 초안 만들기"}
                     </button>
                   </div>
                 </motion.div>
@@ -1882,7 +1903,7 @@ export default function DiaryWritePage() {
                       일기 초안을 만들까요?
                     </p>
                     <p className="text-sm text-[#64748B] mb-4">
-                      {LU_ICON} 별조각 10개가 소모돼요.
+                      {costDiaryMode > 0 ? `${LU_ICON} 별조각 ${costDiaryMode}개가 소모돼요.` : "일기 초안을 만들어 드려요."}
                     </p>
                     <div className="flex gap-2">
                       <button
@@ -1928,7 +1949,7 @@ export default function DiaryWritePage() {
                       음성 일기를 정돈해서 생성할까요?
                     </p>
                     <p className="text-sm text-[#64748B] mb-4">
-                      {LU_ICON} 별조각 10개가 소모돼요.
+                      {costDiaryMode > 0 ? `${LU_ICON} 별조각 ${costDiaryMode}개가 소모돼요.` : "일기 초안을 만들어 드려요."}
                     </p>
                     <div className="flex gap-2">
                       <button

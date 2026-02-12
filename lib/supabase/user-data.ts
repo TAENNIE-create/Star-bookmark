@@ -109,6 +109,28 @@ export function getLocalStorageKeysToMigrate(): string[] {
   return keys;
 }
 
+/**
+ * 로그인 시 profiles 테이블의 별조각·멤버십을 가져옵니다.
+ * 다른 기기에서 결제 반영 등으로 profiles만 갱신된 경우 user_data/캐시와 동기화할 때 사용.
+ */
+export async function getProfileBalanceAndMembership(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<{ lu_balance: number; membership_status: string } | null> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("lu_balance, membership_status")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error || !data) return null;
+  const lu_balance = typeof data.lu_balance === "number" ? Math.max(0, data.lu_balance) : 30;
+  const membership_status =
+    typeof data.membership_status === "string" && data.membership_status
+      ? data.membership_status
+      : "FREE";
+  return { lu_balance, membership_status };
+}
+
 /** localStorage 데이터를 Supabase user_data로 업로드 후 로컬 삭제 */
 export async function migrateLocalStorageToSupabase(
   supabase: SupabaseClient,

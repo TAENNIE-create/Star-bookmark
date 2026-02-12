@@ -37,10 +37,16 @@ export function CosmicLayoutWrapper({ children }: CosmicLayoutWrapperProps) {
   }, []);
 
   return (
-    <div className="relative min-h-screen">
+    <div className="relative min-h-[100dvh]">
       <CosmicBackground />
-      <div className="relative z-10 flex justify-center min-h-screen">
-        <CosmicFrame className="w-full max-w-md min-h-screen flex flex-col bg-transparent">
+      <div className="relative z-10 flex justify-center min-h-[100dvh]">
+        <CosmicFrame
+          className="w-full max-w-md min-h-[100dvh] flex flex-col bg-transparent"
+          style={{
+            paddingLeft: "env(safe-area-inset-left, 0px)",
+            paddingRight: "env(safe-area-inset-right, 0px)",
+          }}
+        >
           {children}
         </CosmicFrame>
       </div>

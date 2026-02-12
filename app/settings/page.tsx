@@ -261,7 +261,7 @@ export default function SettingsPage() {
           </button>
         </header>
 
-        <main className="flex-1 px-4 pb-24 space-y-6">
+        <main className="flex-1 px-4 space-y-6 arisum-pb-tab-safe">
           {/* 1. 계정 (Account) */}
           <Card>
             <h2

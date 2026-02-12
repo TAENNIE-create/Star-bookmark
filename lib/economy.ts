@@ -88,24 +88,34 @@ const BASE_COSTS: Record<ShardAction, number> = {
   permanent_memory_key: COST_PERMANENT_MEMORY_KEY,
 };
 
+/** 구독 여부: FREE가 아니면 구독자(할인 적용). */
+export function isSubscribed(tier: MembershipTier): boolean {
+  return tier !== "FREE";
+}
+
 /**
- * 멤버십 등급에 따른 최종 소모 별조각 계산.
- * 은하(CHRONICLE): 데일리 30→15, 재분석 15→7, 월간 400→200, diary_mode 무료.
- * 금별(HARDCOVER): 분석·재분석 50% 할인.
+ * 멤버십 등급에 따른 최종 소모 별조각 계산. 소수점 발생 시 반올림.
+ * 구독 시(은하·금별·샛별): 데일리 30→15, 재분석 15→7, 월간 400→200, 기억의 열쇠 200→100.
+ * 은하(CHRONICLE): 기록 모드(질문/사진/음성) 무료.
  */
 export function getRequiredShards(tier: MembershipTier, action: ShardAction): number {
   const base = BASE_COSTS[action];
-  if (action === "daily_analysis" || action === "re_analysis") {
-    if (tier === "HARDCOVER" || tier === "CHRONICLE") return Math.max(1, Math.floor(base * 0.5));
-    return base;
+  const subscribed = isSubscribed(tier);
+  if (action === "daily_analysis") {
+    return subscribed ? 15 : base;
+  }
+  if (action === "re_analysis") {
+    return subscribed ? 7 : base;
   }
   if (action === "diary_mode") {
     if (tier === "CHRONICLE") return 0;
     return base;
   }
   if (action === "monthly_archive_unlock") {
-    if (tier === "CHRONICLE") return Math.max(1, Math.floor(base * 0.5));
-    return base;
+    return subscribed ? 200 : base;
+  }
+  if (action === "permanent_memory_key") {
+    return subscribed ? 100 : base;
   }
   return base;
 }
@@ -139,6 +149,10 @@ export function setMembershipTier(tier: MembershipTier): void {
   getAppStorage().setItem(MEMBERSHIP_STORAGE_KEY, tier);
   window.dispatchEvent(new Event("membership-updated"));
 }
+
+/** 별조각 부족 시 안내 문구 (상점 모달 연동용). */
+export const INSUFFICIENT_SHARDS_MESSAGE =
+  "별조각이 부족합니다. 퀘스트를 수행하거나 상점에서 채워보세요.";
 
 // ─── 열람·분석 권한 (데이터는 서버에 보존, 권한만 등급으로 제어) ─────────────────
 /** YYYY-MM-DD 가 (오늘 - accessDays) 이내인지, 또는 해당 월이 기억의 열쇠로 영구 해금되었는지 */

@@ -12,7 +12,7 @@ const GOLD_FILTER = "invert(90%) sepia(30%) saturate(2000%) hue-rotate(350deg) b
 const LOCK_GLOW_FILTER = `${GOLD_FILTER} drop-shadow(0 0 4px rgba(253,230,138,0.6)) drop-shadow(0 0 8px rgba(253,230,138,0.3))`;
 
 import { getLuBalance, subtractLu } from "../../lib/lu-balance";
-import { COST_PERMANENT_MEMORY_KEY, getMembershipTier, getRequiredShards } from "../../lib/economy";
+import { getMembershipTier, getRequiredShards, INSUFFICIENT_SHARDS_MESSAGE } from "../../lib/economy";
 import { getUserName } from "../../lib/home-greeting";
 import { getUnlockedMonths, setUnlockedMonths } from "../../lib/archive-unlock";
 import { getAppStorage } from "../../lib/app-storage";
@@ -144,6 +144,7 @@ export default function ArchivePage() {
   const [unlocked, setUnlocked] = useState<Set<string>>(new Set());
   const [confirmUnlockMonth, setConfirmUnlockMonth] = useState<string | null>(null);
   const [nickname, setNickname] = useState("");
+  const [, setMembershipVersion] = useState(0);
 
   useEffect(() => {
     setMounted(true);
@@ -163,10 +164,18 @@ export default function ArchivePage() {
     return () => window.removeEventListener("lu-balance-updated", onUpdate);
   }, []);
 
+  useEffect(() => {
+    const onMembershipUpdated = () => setMembershipVersion((v) => v + 1);
+    window.addEventListener("membership-updated", onMembershipUpdated);
+    return () => window.removeEventListener("membership-updated", onMembershipUpdated);
+  }, []);
+
   if (!mounted) return null;
 
+  const tier = getMembershipTier();
   const slots = buildMonthlySlots(reports, unlocked);
-  const costMonthly = getRequiredShards(getMembershipTier(), "monthly_archive_unlock");
+  const costMonthly = getRequiredShards(tier, "monthly_archive_unlock");
+  const costMemory = getRequiredShards(tier, "permanent_memory_key");
 
   const unlockMonth = (yearMonth: string) => {
     const needed = costMonthly;
@@ -182,10 +191,10 @@ export default function ArchivePage() {
     router.push(`/archive/${yearMonth}`);
   };
 
-  /** 기억의 열쇠: 200 별조각으로 해당 달 영구 소장 (멤버십과 무관 열람·AI 맥락 포함) */
+  /** 기억의 열쇠: 별조각으로 해당 달 영구 소장 (멤버십과 무관 열람·AI 맥락 포함) */
   const unlockMonthWithMemoryKey = (yearMonth: string) => {
-    if (lu < COST_PERMANENT_MEMORY_KEY || unlocked.has(yearMonth)) return;
-    if (!subtractLu(COST_PERMANENT_MEMORY_KEY)) return;
+    if (lu < costMemory || unlocked.has(yearMonth)) return;
+    if (!subtractLu(costMemory)) return;
     setLu(getLuBalance());
     const next = new Set(unlocked);
     next.add(yearMonth);
@@ -231,7 +240,7 @@ export default function ArchivePage() {
           월간 기록집을 해금해 태돌님을 돌아보세요.
         </p>
 
-        <main className="flex-1 px-6 pb-24 overflow-y-auto">
+        <main className="flex-1 px-6 overflow-y-auto arisum-pb-tab-safe">
           <AnimatePresence>
             {confirmUnlockMonth && (
               <motion.div
@@ -248,22 +257,29 @@ export default function ArchivePage() {
                   onClick={(e) => e.stopPropagation()}
                   className="rounded-2xl bg-white border border-slate-200 p-6 shadow-xl max-w-sm w-full"
                 >
-                  {lu < costMonthly && lu < COST_PERMANENT_MEMORY_KEY ? (
+                  {lu < costMonthly && lu < costMemory ? (
                     <>
                       <p className="text-sm font-bold mb-2" style={{ color: MIDNIGHT_BLUE }}>
-                        퀘스트로 별조각을 모아 기록집을 완성하세요.
+                        별조각이 부족해요
                       </p>
                       <p className="text-xs text-[#64748B] mb-4">
-                        별조각이 부족해요. 일기 퀘스트를 완료하면 별조각을 얻을 수 있어요.
+                        {INSUFFICIENT_SHARDS_MESSAGE}
                       </p>
-                      <div className="flex justify-end">
+                      <div className="flex justify-end gap-2">
                         <button
                           type="button"
                           onClick={() => setConfirmUnlockMonth(null)}
+                          className="px-3 py-1.5 text-sm font-medium rounded-full border border-slate-300 text-[#64748B] hover:bg-slate-100"
+                        >
+                          닫기
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { openStoreModal(); setConfirmUnlockMonth(null); }}
                           className="px-3 py-1.5 text-sm font-medium rounded-full text-white hover:opacity-90"
                           style={{ backgroundColor: MIDNIGHT_BLUE }}
                         >
-                          확인
+                          상점 가기
                         </button>
                       </div>
                     </>
@@ -273,7 +289,7 @@ export default function ArchivePage() {
                         이 달 기록집을 열어보세요.
                       </p>
                       <p className="text-xs text-[#64748B] mb-4">
-                        별조각 400으로 한 달 열람하거나, 200으로 기억의 열쇠(영구 소장)할 수 있어요.
+                        별조각 {costMonthly}으로 한 달 열람하거나, {costMemory}으로 기억의 열쇠(영구 소장)할 수 있어요.
                       </p>
                       <div className="flex flex-col gap-2">
                         <div className="flex gap-2 justify-end flex-wrap">
@@ -302,7 +318,7 @@ export default function ArchivePage() {
                               <span>{costMonthly} 열람</span>
                             </motion.button>
                           )}
-                          {lu >= COST_PERMANENT_MEMORY_KEY && (
+                          {lu >= costMemory && (
                             <motion.button
                               type="button"
                               onClick={() => confirmUnlockMonth && unlockMonthWithMemoryKey(confirmUnlockMonth)}
@@ -316,7 +332,7 @@ export default function ArchivePage() {
                               transition={{ duration: 0.15 }}
                             >
                               <span className="inline-flex items-center text-[0.85em] leading-none" aria-hidden>{LU_ICON}</span>
-                              <span>{COST_PERMANENT_MEMORY_KEY} 기억의 열쇠</span>
+                              <span>{costMemory} 기억의 열쇠</span>
                             </motion.button>
                           )}
                         </div>
