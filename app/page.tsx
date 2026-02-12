@@ -92,8 +92,7 @@ export default function HomePage() {
       style={{ willChange: "opacity" }}
     >
       <div
-        className="w-full max-w-md min-h-[100dvh] relative flex flex-col bg-transparent"
-        className="arisum-pb-tab-safe"
+        className="w-full max-w-md min-h-[100dvh] relative flex flex-col bg-transparent arisum-pb-tab-safe"
         style={{ color: MIDNIGHT_BLUE }}
       >
         <div className="h-6 flex-shrink-0" aria-hidden />
