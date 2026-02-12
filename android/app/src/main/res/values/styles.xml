@@ -16,7 +16,10 @@
     </style>
 
 
+    <!-- 앱 실행 시 스플래시: drawable(구버전) + Android 12+ 단색 배경. postSplashScreenTheme로 전환 후 메인 테마 적용 -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <item name="android:background">@drawable/splash</item>
+        <item name="android:windowBackground">@drawable/splash</item>
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>
 </resources>

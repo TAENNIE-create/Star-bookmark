@@ -119,10 +119,11 @@ export default function HomePage() {
               }}
               aria-hidden
             />
+            {/* 공전 밤하늘 박스: 최상위 레이어(z-20)로 빛·버튼에 가려지지 않게 */}
             <motion.section
               initial={false}
               animate={{ opacity: 1 }}
-              className="relative z-10 flex-1 min-h-0 max-h-[36vh] flex flex-col px-4 pb-2 overflow-hidden"
+              className="relative z-[20] flex-1 min-h-0 max-h-[36vh] flex flex-col px-4 pb-2 overflow-hidden"
             >
               <MyRoom keywords={latestAnalysis?.keywords ?? null} />
             </motion.section>
