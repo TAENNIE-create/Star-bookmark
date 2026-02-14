@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { CosmicBackground } from "./cosmic-background";
 import { CosmicFrame } from "./cosmic-frame";
+import { CustomSplashOverlay } from "./custom-splash-overlay";
 import { ARCHIVE_UNLOCKED_KEY } from "../../lib/archive-unlock";
 import { getAppStorage } from "../../lib/app-storage";
 
@@ -38,6 +39,7 @@ export function CosmicLayoutWrapper({ children }: CosmicLayoutWrapperProps) {
 
   return (
     <div className="relative min-h-[100dvh]">
+      <CustomSplashOverlay />
       <CosmicBackground />
       <div className="relative z-10 flex justify-center min-h-[100dvh]">
         <CosmicFrame

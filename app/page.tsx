@@ -104,30 +104,17 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* 1·2구역: 공전 박스 + 일기쓰기. 일기쓰기 빛은 공전 박스 뒤로만 퍼지도록 glow 레이어를 뒤에 둠 */}
+        {/* 1·2구역: 공전 박스 + 일기쓰기 */}
         {activeTab === "home" ? (
           <div className="relative flex flex-col flex-[4] min-h-0 basis-0">
-            {/* 일기쓰기 빛: 버튼 위로 퍼지는 그라데이션, z-0으로 공전 박스 뒤에만 보이게 */}
-            <div
-              className="absolute left-0 right-0 pointer-events-none rounded-t-2xl"
-              style={{
-                bottom: 72,
-                height: 140,
-                zIndex: 0,
-                background:
-                  "linear-gradient(to top, rgba(253,230,138,0.4) 0%, rgba(253,230,138,0.18) 40%, rgba(253,230,138,0.06) 65%, transparent 100%)",
-              }}
-              aria-hidden
-            />
-            {/* 공전 밤하늘 박스: 최상위 레이어(z-20)로 빛·버튼에 가려지지 않게 */}
             <motion.section
               initial={false}
               animate={{ opacity: 1 }}
-              className="relative z-[20] flex-1 min-h-0 max-h-[36vh] flex flex-col px-4 pb-2 overflow-hidden"
+              className="flex-1 min-h-0 max-h-[36vh] flex flex-col px-4 pb-2 overflow-hidden"
             >
               <MyRoom keywords={latestAnalysis?.keywords ?? null} />
             </motion.section>
-            <main className="relative z-10 flex-shrink-0 min-h-[72px] flex items-center justify-center px-4 py-3">
+            <main className="flex-shrink-0 min-h-[72px] flex items-center justify-center px-4 py-3 overflow-hidden">
               <BreathingButton
                 onAnalysisComplete={(data) =>
                   setLatestAnalysis({

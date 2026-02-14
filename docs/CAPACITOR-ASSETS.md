@@ -78,7 +78,23 @@ npx capacitor-assets generate --pwa
 
 ---
 
-## 5. 참고
+## 5. 아이콘/스플래시가 적용되지 않을 때
+
+캐시·이전 빌드 때문에 반영이 안 되면 **클린 재현 루틴**을 따르세요.
+
+```bash
+npm run refresh:android-assets   # cap:assets + Gradle clean
+npm run build
+npx cap sync android
+```
+
+그 다음 Android Studio에서 **`c:\arisum\android`** 프로젝트를 연 뒤, Clean Project → 기기에서 앱 삭제 → Run으로 재설치.
+
+자세한 단계와 체크리스트: **[docs/ANDROID-ICON-SPLASH.md](ANDROID-ICON-SPLASH.md)**
+
+---
+
+## 6. 참고
 
 - [Capacitor: Splash Screens and Icons](https://capacitorjs.com/docs/guides/splash-screens-and-icons)
 - [@capacitor/assets (npm)](https://www.npmjs.com/package/@capacitor/assets)

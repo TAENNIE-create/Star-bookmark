@@ -160,24 +160,11 @@ export function BreathingButton({ onAnalysisComplete }: BreathingButtonProps) {
         <motion.button
           type="button"
           onClick={handleButtonClick}
-          className="relative w-full h-12 rounded-2xl shadow-lg flex items-center justify-center gap-2.5"
+          className="relative w-full h-12 rounded-2xl flex items-center justify-center gap-2.5"
           style={{
             background: "#FDE68A",
             color: "#0F172A",
-            boxShadow:
-              "0 0 20px rgba(253, 230, 138, 0.6), 0 0 40px rgba(253, 230, 138, 0.3), 0 2px 8px rgba(15, 23, 42, 0.1)",
-          }}
-          animate={{
-            boxShadow: [
-              "0 0 20px rgba(253, 230, 138, 0.6), 0 0 40px rgba(253, 230, 138, 0.3), 0 2px 8px rgba(15, 23, 42, 0.1)",
-              "0 0 28px rgba(253, 230, 138, 0.75), 0 0 52px rgba(253, 230, 138, 0.4), 0 2px 8px rgba(15, 23, 42, 0.1)",
-              "0 0 20px rgba(253, 230, 138, 0.6), 0 0 40px rgba(253, 230, 138, 0.3), 0 2px 8px rgba(15, 23, 42, 0.1)",
-            ],
-          }}
-          transition={{
-            duration: 2.5,
-            repeat: Infinity,
-            ease: "easeInOut",
+            boxShadow: "0 2px 8px rgba(15, 23, 42, 0.1)",
           }}
         >
           <div className="absolute inset-0.5 rounded-[14px] bg-white/20 backdrop-blur-sm" />

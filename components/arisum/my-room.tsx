@@ -183,18 +183,8 @@ export function MyRoom({ keywords: _keywordsProp }: MyRoomProps) {
         boxShadow: "0 2px 12px rgba(10, 14, 26, 0.12)",
         isolation: "isolate",
         zIndex: 1,
-        WebkitMaskImage: "linear-gradient(to bottom, black 0%, black 70%, transparent 100%)",
-        maskImage: "linear-gradient(to bottom, black 0%, black 70%, transparent 100%)",
       }}
     >
-      {/* 배경에서 올라오는 빛(그라데이션)은 박스 뒤에 위치 */}
-      <div
-        className="absolute inset-0 pointer-events-none rounded-t-2xl"
-        style={{
-          zIndex: 0,
-          background: "linear-gradient(to bottom, transparent 0%, transparent 55%, rgba(244,247,251,0.3) 80%, rgba(244,247,251,0.95) 100%)",
-        }}
-      />
       {/* Nebula radial: 중심 밝고 가장자리로 갈수록 깊은 우주 */}
       <div
         className="absolute inset-0 pointer-events-none rounded-t-2xl z-[1]"
@@ -204,8 +194,8 @@ export function MyRoom({ keywords: _keywordsProp }: MyRoomProps) {
         }}
       />
 
-      {/* Star particles */}
-      <div className="absolute inset-0 pointer-events-none rounded-t-2xl overflow-hidden z-[1]">
+      {/* Star particles: 별·궤도는 최상위(z-[2])로 빛에 가려지지 않게 */}
+      <div className="absolute inset-0 pointer-events-none rounded-t-2xl overflow-hidden z-[2]">
         {particles.map((p, i) => (
           <motion.span
             key={i}
@@ -215,7 +205,6 @@ export function MyRoom({ keywords: _keywordsProp }: MyRoomProps) {
               top: `${p.y}%`,
               width: p.size,
               height: p.size,
-              boxShadow: "0 0 4px rgba(253, 230, 138, 0.6)",
             }}
             animate={{ opacity: [0.15, 0.6, 0.15] }}
             transition={{
@@ -230,7 +219,7 @@ export function MyRoom({ keywords: _keywordsProp }: MyRoomProps) {
       {/* Orbit system: 높이 기준 반지름 제한, 정확히 중앙 정렬 */}
       <div
         ref={orbitContainerRef}
-        className="relative flex flex-1 min-h-0 items-center justify-center w-full z-[1]"
+        className="relative flex flex-1 min-h-0 items-center justify-center w-full z-[2]"
         style={{ minHeight: 120 }}
       >
         {/* 궤도 + 태양이 들어가는 정사각 영역 (반지름의 2배, 진짜 중앙에 배치) */}
@@ -285,7 +274,6 @@ export function MyRoom({ keywords: _keywordsProp }: MyRoomProps) {
                       height: 6,
                       left: 1,
                       top: 1,
-                      boxShadow: "0 0 8px rgba(253, 230, 138, 0.8)",
                     }}
                   />
                   <motion.span
@@ -305,7 +293,7 @@ export function MyRoom({ keywords: _keywordsProp }: MyRoomProps) {
             );
           })}
 
-          {/* Sun Star (The Core) – 박스 내 정확히 가로/세로 중앙 */}
+          {/* Sun Star (The Core) – glow 제거 (떠다니는 빛 원인) */}
           <motion.div
             className="absolute z-10 rounded-full"
             style={{
@@ -315,16 +303,10 @@ export function MyRoom({ keywords: _keywordsProp }: MyRoomProps) {
               top: "50%",
               transform: "translate(-50%, -50%)",
               background: "radial-gradient(circle, #FDE68A 0%, #F59E0B 50%, #D97706 100%)",
-              boxShadow: "0 0 20px rgba(253, 230, 138, 0.9), 0 0 40px rgba(251, 191, 36, 0.5)",
             }}
             animate={{
-              scale: [1, 1.15, 1],
+              scale: [1, 1.08, 1],
               opacity: [0.95, 1, 0.95],
-              boxShadow: [
-                "0 0 20px rgba(253, 230, 138, 0.9), 0 0 40px rgba(251, 191, 36, 0.5)",
-                "0 0 28px rgba(253, 230, 138, 1), 0 0 56px rgba(251, 191, 36, 0.7)",
-                "0 0 20px rgba(253, 230, 138, 0.9), 0 0 40px rgba(251, 191, 36, 0.5)",
-              ],
             }}
             transition={{
               duration: 2.5,

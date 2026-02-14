@@ -1,15 +1,14 @@
 package com.starbookmark.app;
 
 import android.os.Bundle;
-import androidx.core.splashscreen.SplashScreen;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        // 스플래시를 설치해 테마에 정의된 스플래시가 앱 준비될 때까지 표시되도록 함
-        SplashScreen.installSplashScreen(this);
+        // 스플래시: styles.xml의 android:windowBackground=@drawable/splash 로 전체 이미지 표시
+        // Theme.SplashScreen 사용 시 Android 12+에서 splash.png 무시되고 아이콘+단색만 표시됨
         super.onCreate(savedInstanceState);
     }
 }
